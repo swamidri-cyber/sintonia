@@ -1,0 +1,6 @@
+.herramientas/
+__pycache__/
+*.qsb
+*.pyc
+/dist/
+/build/

@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#07020c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cine">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<title>映 · Modo cine</title>
+<style>
+@font-face { font-family: Mono; src: url(/font/mono.otf); }
+@font-face { font-family: Eva; src: url(/font/serif.ttf); font-weight: 700; }
+@font-face { font-family: Sans; src: url(/font/sans.ttf); font-weight: 100 900; }
+:root { --bg:#07020c; --deep:#14072a; --line:#3d2260; --dim:#9a74c8; --fg:#e2ceff; --hi:#f6eeff; --warn:#ff8a3d;
+        --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: Sans, system-ui, sans-serif;
+             overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+body { transition: background .3s; min-height: 100dvh; }
+/* líneas de tubo encima de todo */
+body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 99;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px); }
+/* ruido de imagen (como en la tele), encima de todo y moviéndose */
+body::before { content: ""; position: fixed; inset: -50%; pointer-events: none; z-index: 98; opacity: .09;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain .5s steps(6) infinite; }
+@keyframes grain { 0% { transform: translate(0, 0) } 20% { transform: translate(-7%, 4%) } 40% { transform: translate(5%, -6%) }
+  60% { transform: translate(-4%, -3%) } 80% { transform: translate(6%, 5%) } 100% { transform: translate(-2%, 7%) } }
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.mono { font-family: Mono, monospace; letter-spacing: .12em; }
+.eva { font-family: Eva, serif; font-weight: 700; letter-spacing: -.02em; transform: scaleX(.78); transform-origin: left center;
+       display: inline-block; white-space: nowrap; }
+.hidden { display: none !important; }
+
+/* ── Encabezado ── */
+header { position: sticky; top: 0; z-index: 10; padding: calc(var(--safe-t) + 12px) 16px 8px;
+         background: var(--bg); transition: background .3s; }
+/* fundido debajo del encabezado: lo que pasa por abajo no se ve cortado en seco */
+header::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 18px; pointer-events: none;
+         background: linear-gradient(var(--bg), transparent); }
+.top { display: flex; align-items: center; gap: 10px; }
+.live { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 10px var(--warn);
+         animation: blink 1.6s infinite; }
+@keyframes blink { 50% { opacity: .3 } }
+.top .ch { font-size: 12px; color: var(--dim); }
+.top .name { font-size: 30px; color: var(--hi); line-height: 1; }
+.top .grow { flex: 1; }
+.iconbtn { width: 42px; height: 42px; border-radius: 21px; border: 1.5px solid var(--line); display: grid; place-items: center;
+           font-family: Mono; font-size: 18px; color: var(--hi); }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 4px; scrollbar-width: none; }
+.chips::-webkit-scrollbar, .scroller::-webkit-scrollbar { display: none; }
+.chip { flex: none; padding: 9px 14px; border-radius: 20px; border: 1.5px solid var(--line); font-family: Mono; font-size: 12px;
+        letter-spacing: .1em; color: var(--dim); white-space: nowrap; }
+.chip.on { background: var(--hi); color: var(--bg); border-color: var(--hi); }
+.tabs { display: flex; gap: 22px; padding-top: 8px; }
+.tab { font-family: Mono; font-size: 13px; letter-spacing: .15em; color: var(--dim); padding-bottom: 6px; border-bottom: 2px solid transparent; }
+.tab.on { color: var(--hi); border-color: var(--hi); }
+
+/* ── Filas ── */
+main { padding: 4px 0 calc(110px + var(--safe-b)); }
+.row h3 { font-family: Eva; font-size: 22px; margin: 18px 16px 8px; color: var(--hi); font-weight: 700;
+          transform: scaleX(.8); transform-origin: left; white-space: nowrap; }
+.scroller { display: flex; gap: 10px; overflow-x: auto; padding: 0 16px; scroll-snap-type: x mandatory; scroll-padding: 16px; }
+.card { flex: none; width: 70vw; max-width: 330px; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; position: relative;
+        background: var(--deep) center/cover no-repeat; scroll-snap-align: start; box-shadow: 0 0 0 1px var(--line) inset; }
+.card::before { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 45%, rgba(0,0,0,.85)); }
+.card .t { position: absolute; left: 12px; right: 12px; bottom: 10px; font-weight: 800; font-size: 15px; color: #fff;
+           text-shadow: 0 1px 4px #000; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .p { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--warn); }
+.card .badge { position: absolute; right: 8px; top: 8px; font-family: Mono; font-size: 10px; padding: 3px 6px; border-radius: 6px;
+               background: rgba(0,0,0,.6); color: #fff; }
+.loading { padding: 40px 16px; font-family: Mono; color: var(--dim); font-size: 13px; letter-spacing: .12em; }
+.loading::before { content: "▒▒▒  "; animation: blink 1.2s infinite; }
+
+/* ── Ficha / hojas ── */
+.sheet { position: fixed; inset: 0; z-index: 30; background: var(--bg); overflow-y: auto; transform: translateY(100%);
+         transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.sheet.open { transform: none; }
+.hero { position: relative; aspect-ratio: 16/10; background: var(--deep) center/cover no-repeat; }
+.hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.2), var(--bg) 96%); }
+.close { position: absolute; z-index: 2; top: calc(var(--safe-t) + 12px); left: 14px; background: rgba(0,0,0,.55); border-color: transparent; }
+.info { padding: 0 18px 30px; margin-top: -60px; position: relative; z-index: 1; }
+.info .title { font-size: 44px; color: #fff; line-height: 1; max-width: 125%; white-space: normal; }
+.meta { font-size: 14px; color: var(--dim); margin: 10px 0; }
+.desc { font-size: 15px; line-height: 1.45; color: var(--fg); }
+.btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 56px; border-radius: 28px;
+       border: 2px solid var(--line); font-family: Mono; font-size: 14px; letter-spacing: .14em; color: var(--hi); margin-top: 10px; }
+.btn.main { background: var(--hi); color: var(--bg); border-color: var(--hi); }
+.btn small { font-family: Sans; letter-spacing: 0; opacity: .7; }
+.seasons { display: flex; gap: 8px; overflow-x: auto; margin: 20px 0 10px; scrollbar-width: none; }
+.ep { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: center; }
+.ep .n { font-family: Mono; font-size: 13px; color: var(--dim); width: 42px; flex: none; }
+.ep .x { flex: 1; font-size: 15px; }
+.ep .x div { font-size: 12px; color: var(--dim); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ep img { width: 110px; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; flex: none; background: var(--deep); }
+
+/* ── Elegir (idioma, subtítulos, dónde) ── */
+.pick { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.82); display: flex; align-items: flex-end;
+        backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.pick .box { width: 100%; padding: 22px 18px calc(22px + var(--safe-b)); background: var(--bg); border-top: 2px solid var(--line);
+             border-radius: 22px 22px 0 0; max-height: 80dvh; overflow-y: auto; }
+.pick .q { font-family: Mono; font-size: 13px; letter-spacing: .18em; color: var(--dim); margin-bottom: 8px; }
+.pick .opt { width: 100%; display: flex; justify-content: space-between; align-items: center; min-height: 58px; padding: 0 22px;
+             border-radius: 29px; border: 2px solid var(--line); margin-top: 10px; font-weight: 700; font-size: 17px; text-align: left; }
+.pick .opt small { font-family: Mono; font-weight: 400; font-size: 11px; color: var(--dim); }
+.pick .opt.def { border-color: var(--hi); }
+.pick .err { color: var(--warn); margin: 10px 0; }
+
+/* ── Control remoto ── */
+.remote { position: fixed; inset: 0; z-index: 50; background: #000; display: flex; flex-direction: column; transform: translateY(100%);
+          transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.remote.open { transform: none; }
+.remote .bg { position: absolute; inset: 0; background: center/cover no-repeat; opacity: .35; filter: saturate(.7); }
+.remote .bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.3), #000 85%); }
+.remote .in { position: relative; flex: 1; display: flex; flex-direction: column; padding: calc(var(--safe-t) + 16px) 20px calc(24px + var(--safe-b)); }
+.remote .where { font-family: Mono; font-size: 12px; letter-spacing: .16em; color: var(--hi); display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+.remote .rt { font-size: 52px; color: #fff; margin-top: 8px; line-height: .95; white-space: normal; max-width: 125%; }
+.remote .ep { border: 0; padding: 4px 0; color: #fff; }
+.remote .msg { font-family: Mono; font-size: 13px; color: var(--fg); margin-top: 14px; min-height: 18px; letter-spacing: .08em; }
+.remote .sp { flex: 1; }
+.bar { height: 34px; display: flex; align-items: center; touch-action: none; }
+.bar .track { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); position: relative; }
+.bar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--hi); }
+.bar .knob { position: absolute; top: 50%; width: 18px; height: 18px; border-radius: 9px; background: #fff; transform: translate(-50%, -50%); }
+.times { display: flex; justify-content: space-between; font-family: Mono; font-size: 12px; color: #ccc; }
+.pad { display: grid; grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr; gap: 10px; align-items: center; margin: 24px 0 8px; }
+.pad button { height: 62px; border-radius: 31px; border: 1.5px solid rgba(255,255,255,.25); font-family: Mono; font-size: 13px; color: #fff; }
+.pad .big { height: 84px; border-radius: 42px; background: #fff; color: #000; font-size: 30px; border: 0; }
+.row2 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.row2 button { height: 54px; border-radius: 27px; border: 1.5px solid rgba(255,255,255,.25); font-family: Mono; font-size: 11px;
+               letter-spacing: .1em; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.row2 button b { font-size: 18px; font-weight: 400; }
+.row2 button.on { background: rgba(255,255,255,.18); }
+.exit { margin-top: 12px; height: 52px; border-radius: 26px; border: 1.5px solid var(--warn); color: var(--warn); font-family: Mono; letter-spacing: .14em; font-size: 13px; }
+
+/* ── Barra de "viendo ahora" ── */
+.now { position: fixed; z-index: 20; left: 12px; right: 12px; bottom: calc(12px + var(--safe-b)); height: 66px; border-radius: 33px;
+       background: var(--hi); color: var(--bg); display: flex; align-items: center; gap: 12px; padding: 0 8px 0 8px;
+       box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+.now .th { width: 50px; height: 50px; border-radius: 25px; background: center/cover; flex: none; }
+.now .tx { flex: 1; min-width: 0; }
+.now .tx b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+.now .tx span { font-family: Mono; font-size: 11px; letter-spacing: .1em; }
+.now .pp { width: 50px; height: 50px; border-radius: 25px; background: var(--bg); color: var(--hi); font-size: 20px; flex: none; }
+
+/* ── Buscar ── */
+.search { padding: 0 16px; }
+.search input { width: 100%; height: 54px; border-radius: 27px; border: 2px solid var(--line); background: transparent; color: var(--hi);
+                padding: 0 22px; font: 600 18px Sans; outline: none; -webkit-user-select: text; user-select: text; }
+.search input:focus { border-color: var(--hi); }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 14px 16px; }
+.grid .card { width: auto; max-width: none; }
+
+/* ── Vincular ── */
+.pair { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; padding: 30px; gap: 18px; }
+.pair .big { font-size: 64px; color: var(--hi); }
+.pair input { height: 76px; border-radius: 38px; border: 2px solid var(--line); background: transparent; color: var(--hi); text-align: center;
+              font: 40px Mono; letter-spacing: .5em; outline: none; -webkit-user-select: text; user-select: text; }
+.toast { position: fixed; z-index: 90; top: calc(var(--safe-t) + 14px); left: 50%; transform: translateX(-50%); background: var(--hi);
+         color: var(--bg); font-family: Mono; font-size: 13px; letter-spacing: .1em; padding: 12px 20px; border-radius: 22px; }
+</style>
+</head>
+<body>
+
+<!-- Vincular -->
+<section id="pair" class="pair hidden">
+  <div class="mono" style="color:var(--dim);font-size:13px">映 · MODO CINE</div>
+  <div class="eva big">VINCULAR</div>
+  <div style="font-size:16px;line-height:1.45">En la PC: <b>≡ → CONFIGURACIÓN → TELÉFONO</b>. Escaneá el QR o escribí el código.</div>
+  <input id="pin" inputmode="numeric" maxlength="4" autocomplete="one-time-code" placeholder="····">
+  <button class="btn main" id="pairBtn">VINCULAR</button>
+  <div id="pairErr" class="mono" style="color:var(--warn);font-size:12px"></div>
+</section>
+
+<!-- Inicio -->
+<section id="app" class="hidden">
+  <header>
+    <div class="top">
+      <span class="live"></span>
+      <div>
+        <div class="ch mono" id="chNum">CH 01 · 初号機</div>
+        <div class="name eva" id="chName">STREMIO</div>
+      </div>
+      <span class="grow"></span>
+      <button class="iconbtn" id="searchBtn" aria-label="Buscar">󰍉</button>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="tabs" id="tabs"></div>
+  </header>
+  <div id="searchBox" class="search hidden"><input id="q" type="search" placeholder="Buscar…" enterkeyhint="search"></div>
+  <main id="rows"></main>
+</section>
+
+<!-- Ficha -->
+<section id="sheet" class="sheet">
+  <button class="iconbtn close" id="sheetClose">✕</button>
+  <div class="hero" id="hero"></div>
+  <div class="info" id="info"></div>
+</section>
+
+<!-- Elegir -->
+<div id="pick" class="pick hidden"><div class="box" id="pickBox"></div></div>
+
+<!-- Control remoto -->
+<section id="remote" class="remote">
+  <div class="bg" id="rBg"></div>
+  <div class="in">
+    <button class="iconbtn" id="rClose" style="border-color:rgba(255,255,255,.3)">⌄</button>
+    <div class="where" id="rWhere"></div>
+    <div class="eva rt" id="rTitle"></div>
+    <div class="ep" id="rEp"></div>
+    <div class="msg" id="rMsg"></div>
+    <div class="sp"></div>
+    <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div><div class="knob" id="knob"></div></div></div>
+    <div class="times"><span id="tPos">0:00</span><span id="tLeft">-0:00</span></div>
+    <div class="pad">
+      <button data-c="seek -60">-60</button>
+      <button data-c="seek -10">-10</button>
+      <button class="big" id="ppBtn" data-c="pause">❚❚</button>
+      <button data-c="seek 10">+10</button>
+      <button data-c="seek 60">+60</button>
+    </div>
+    <div class="row2">
+      <button data-c="volume -5"><b>−</b>VOLUMEN</button>
+      <button data-c="volume 5"><b>+</b>VOLUMEN</button>
+      <button id="subBtn"><b>󰨖</b>SUBTÍTULOS</button>
+      <button id="syncBtn"><b>⇆</b>SINCRONIZAR</button>
+    </div>
+    <div class="row2 hidden" id="syncRow" style="margin-top:10px">
+      <button data-c="subdelay -0.5"><b>«</b>−0,5 S</button>
+      <button data-c="subdelay -0.1"><b>‹</b>−0,1 S</button>
+      <button data-c="subdelay 0.1"><b>›</b>+0,1 S</button>
+      <button data-c="subdelay 0.5"><b>»</b>+0,5 S</button>
+    </div>
+    <button class="exit" id="exitBtn">SALIR DE LA PELÍCULA</button>
+  </div>
+</section>
+
+<!-- Viendo ahora -->
+<div id="now" class="now hidden">
+  <div class="th" id="nTh"></div>
+  <div class="tx"><b id="nTitle"></b><span id="nSub"></span></div>
+  <button class="pp" id="nPP">❚❚</button>
+</div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const fmt = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+                   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
+let S = { channels: [], casts: [], prefs: {}, ch: "stremio", tab: "home", item: null, meta: null, season: null, now: null };
+const TABS = { youtube: [["home", "INICIO"], ["subs", "SUSCRIPCIONES"], ["you", "TÚ"]],
+               default: [["home", "INICIO"], ["movie", "PELÍCULAS"], ["series", "SERIES"]] };
+const GENRE_ES = { Action: "Acción", Adventure: "Aventura", Animation: "Animación", Comedy: "Comedia", Crime: "Policial",
+  Documentary: "Documental", Drama: "Drama", Family: "Familiar", Fantasy: "Fantasía", Horror: "Terror", Mystery: "Misterio",
+  Romance: "Romance", "Sci-Fi": "Ciencia ficción", Thriller: "Suspenso", War: "Bélica", History: "Historia", Biography: "Biografía" };
+
+function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.remove("hidden"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.add("hidden"), 2600); }
+async function api(path, body) {
+  const r = await fetch("/api/" + path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (r.status === 401) { showPair(); throw new Error("sin vincular"); }
+  return r.json();
+}
+function vibe(ms = 12) { if (navigator.vibrate) navigator.vibrate(ms); }
+
+// ── Vincular ──
+function showPair() { $("#app").classList.add("hidden"); $("#pair").classList.remove("hidden"); }
+async function doPair() {
+  const pin = $("#pin").value.trim();
+  if (pin.length !== 4) return;
+  const name = /iPhone|iPad/.test(navigator.userAgent) ? "iPhone" : /Android/.test(navigator.userAgent) ? "Android" : "Navegador";
+  const r = await fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, name }) });
+  if (r.ok) { history.replaceState(null, "", "/"); $("#pair").classList.add("hidden"); start(); }
+  else { $("#pairErr").textContent = "CÓDIGO INCORRECTO O VENCIDO: PEDÍ UNO NUEVO EN LA PC"; vibe(80); }
+}
+$("#pairBtn").onclick = doPair;
+$("#pin").oninput = () => { if ($("#pin").value.length === 4) doPair(); };
+
+// ── Canales ──
+function theme(ch) {
+  const c = S.channels.find(x => x.id === ch) || S.channels[0];
+  for (const k of ["bg", "deep", "line", "dim", "fg", "hi", "warn"]) document.documentElement.style.setProperty("--" + k, c[k]);
+  document.querySelector('meta[name="theme-color"]').content = c.bg;
+  $("#chNum").textContent = "CH " + c.ch + " · " + c.kana;
+  $("#chName").textContent = c.name;
+}
+function renderChips() {
+  const box = $("#chips"); box.innerHTML = "";
+  for (const c of S.channels) {
+    const b = el("button", "chip" + (c.id === S.ch ? " on" : ""), "CH " + c.ch + " " + esc(c.name));
+    b.onclick = () => { vibe(); S.ch = c.id; S.tab = "home"; localStorage.ch = c.id; theme(c.id); renderChips(); renderTabs(); loadRows(); };
+    box.appendChild(b);
+  }
+  const on = box.querySelector(".on"); if (on) on.scrollIntoView({ inline: "center", block: "nearest" });
+}
+function renderTabs() {
+  const box = $("#tabs"); box.innerHTML = "";
+  for (const [id, label] of (TABS[S.ch] || TABS.default)) {
+    const b = el("button", "tab" + (id === S.tab ? " on" : ""), label);
+    b.onclick = () => { vibe(); S.tab = id; renderTabs(); loadRows(); };
+    box.appendChild(b);
+  }
+}
+function card(it) {
+  const c = el("button", "card");
+  const img = S.ch === "youtube" || it.type === "video" ? it.poster : (it.background || it.poster);
+  if (img) c.style.backgroundImage = `url("${img}")`;
+  c.appendChild(el("div", "t", esc(it.name)));
+  if (it.progress > 0.01 && it.progress < 0.97) { const p = el("div", "p"); p.style.width = (it.progress * 100) + "%"; c.appendChild(p); }
+  if (it.type === "series") c.appendChild(el("div", "badge", "SERIE"));
+  else if (it.runtime && it.type === "video") c.appendChild(el("div", "badge", esc(it.runtime)));
+  c.onclick = () => { vibe(); openSheet(it); };
+  return c;
+}
+let rowsReq = 0;
+async function loadRows() {
+  const n = ++rowsReq, box = $("#rows");
+  box.innerHTML = '<div class="loading">SINTONIZANDO…</div>';
+  try {
+    const d = await api(`rows?ch=${S.ch}&tab=${S.tab}`);
+    if (n !== rowsReq) return;
+    box.innerHTML = "";
+    if (!d.rows.length) box.innerHTML = '<div class="loading">NO HAY SEÑAL EN ESTE CANAL</div>';
+    for (const r of d.rows) {
+      const row = el("section", "row"); row.appendChild(el("h3", "", esc(r.title)));
+      const sc = el("div", "scroller"); r.items.forEach(it => sc.appendChild(card(it))); row.appendChild(sc); box.appendChild(row);
+    }
+  } catch (e) { if (n === rowsReq) box.innerHTML = '<div class="loading">SIN CONEXIÓN CON LA PC</div>'; }
+}
+
+// ── Buscar ──
+$("#searchBtn").onclick = () => {
+  const b = $("#searchBox"); b.classList.toggle("hidden");
+  if (!b.classList.contains("hidden")) $("#q").focus(); else { $("#q").value = ""; loadRows(); }
+};
+let qTimer = null;
+$("#q").oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(doSearch, 450); };
+async function doSearch() {
+  const q = $("#q").value.trim(); if (q.length < 2) return;
+  const box = $("#rows"); box.innerHTML = '<div class="loading">BUSCANDO…</div>';
+  const d = await api(`search?ch=${S.ch === "youtube" ? "youtube" : "stremio"}&q=${encodeURIComponent(q)}`);
+  box.innerHTML = ""; const g = el("div", "grid"); d.items.forEach(it => g.appendChild(card(it))); box.appendChild(g);
+  if (!d.items.length) box.innerHTML = '<div class="loading">NADA CON ESE NOMBRE</div>';
+}
+
+// ── Ficha ──
+async function openSheet(it) {
+  S.item = it; S.meta = null; S.season = null;
+  $("#hero").style.backgroundImage = `url("${it.type === "video" ? it.poster : (it.background || it.poster)}")`;
+  renderInfo();
+  $("#sheet").classList.add("open"); $("#sheet").scrollTop = 0;
+  history.pushState({ v: "sheet" }, "");
+  if (it.type !== "video") {
+    try { const m = await api(`meta?type=${it.type}&id=${encodeURIComponent(it.id)}`); if (S.item === it && m && !m.error) { S.meta = m; renderInfo(); } } catch (e) {}
+  }
+}
+function closeSheet() { $("#sheet").classList.remove("open"); }
+$("#sheetClose").onclick = () => history.back();
+function renderInfo() {
+  const it = Object.assign({}, S.item, S.meta || {}), box = $("#info");
+  const meta = [it.year, it.rating ? "★ " + it.rating : "", it.runtime, (it.genres || []).slice(0, 3).map(g => GENRE_ES[g] || g).join(", "), it.channel]
+    .filter(Boolean).join("  ·  ");
+  box.innerHTML = `<div class="eva title">${esc((it.name || "").toUpperCase())}</div><div class="meta">${esc(meta)}</div>
+                   <div class="desc">${esc(it.description || "")}</div><div id="acts"></div><div id="eps"></div>`;
+  const acts = $("#acts");
+  const resume = (it.offset || 0) > 60000 && (it.progress || 0) < 0.95;
+  if (it.type === "series") {
+    const vids = (S.meta?.videos || []).filter(v => v.season > 0);
+    const cur = vids.find(v => v.id === it.videoId);
+    if (cur) { const b = el("button", "btn main", `CONTINUAR <small>T${cur.season} · E${cur.episode}</small>`); b.onclick = () => playFlow(cur.id, it.offset || 0, cur); acts.appendChild(b); }
+    else if (vids[0]) { const b = el("button", "btn main", "EMPEZAR LA SERIE"); b.onclick = () => playFlow(vids[0].id, 0, vids[0]); acts.appendChild(b); }
+    renderEpisodes(vids, cur);
+  } else {
+    if (resume) { const b = el("button", "btn main", `CONTINUAR <small>desde ${fmt((it.offset || 0) / 1000)}</small>`); b.onclick = () => playFlow(it.videoId || it.id, it.offset || 0); acts.appendChild(b); }
+    const b = el("button", "btn" + (resume ? "" : " main"), resume ? "DESDE EL PRINCIPIO" : "REPRODUCIR"); b.onclick = () => playFlow(it.id, 0); acts.appendChild(b);
+  }
+}
+function renderEpisodes(vids, cur) {
+  const box = $("#eps"); if (!vids.length) return;
+  const seasons = [...new Set(vids.map(v => v.season))];
+  S.season = S.season ?? (cur ? cur.season : seasons[0]);
+  const sb = el("div", "seasons");
+  for (const s of seasons) { const b = el("button", "chip" + (s === S.season ? " on" : ""), "TEMPORADA " + s); b.onclick = () => { S.season = s; box.innerHTML = ""; renderEpisodes(vids, cur); }; sb.appendChild(b); }
+  box.appendChild(sb);
+  for (const v of vids.filter(v => v.season === S.season)) {
+    const e = el("button", "ep");
+    e.innerHTML = `<div class="n">E${v.episode}</div><div class="x">${esc(v.name || "Episodio " + v.episode)}<div>${esc(v.overview || "")}</div></div>` +
+                  (v.thumbnail ? `<img loading="lazy" src="${esc(v.thumbnail)}">` : "");
+    e.onclick = () => playFlow(v.id, cur && cur.id === v.id ? (S.item.offset || 0) : 0, v);
+    box.appendChild(e);
+  }
+}
+
+// ── Reproducir: idioma → subtítulos → dónde ──
+function pick(question, opts, note) {
+  return new Promise(res => {
+    const box = $("#pickBox"); box.innerHTML = `<div class="q">${esc(question)}</div>` + (note ? `<div class="err">${esc(note)}</div>` : "");
+    opts.forEach((o, i) => {
+      const b = el("button", "opt" + (o.def ? " def" : ""), `<span>${esc(o.label)}</span><small>${esc(o.small || "")}</small>`);
+      b.onclick = () => { vibe(); res(o); };
+      box.appendChild(b);
+    });
+    const c = el("button", "opt", "<span>Cancelar</span>"); c.style.borderColor = "transparent"; c.onclick = () => res(null); box.appendChild(c);
+    $("#pick").classList.remove("hidden");
+  }).finally(() => $("#pick").classList.add("hidden"));
+}
+async function chooseDest() {
+  const casts = S.casts || [], d = S.prefs.dest || "ask";
+  if (d === "pc" || !casts.length) return "pc";
+  if (d === "tv") return casts[0].uuid;
+  const o = await pick("¿DÓNDE LO VES?", [{ label: "En la PC", small: "MONITOR", v: "pc" }]
+                       .concat(casts.map(c => ({ label: "En la tele · " + c.name, small: "CHROMECAST", v: c.uuid }))));
+  return o ? o.v : null;
+}
+async function playFlow(videoId, startMs, ep) {
+  const it = S.item;
+  const epName = ep ? `T${ep.season} · E${ep.episode}  ${ep.name || ""}` : "";
+  if (it.type === "video") {
+    const target = await chooseDest(); if (!target) return;
+    await api("play", { item: it, start: startMs, target, channel: S.ch }); openRemote(); return;
+  }
+  const box = $("#pickBox"); box.innerHTML = '<div class="loading">BUSCANDO FUENTES EN TUS ADDONS…</div>'; $("#pick").classList.remove("hidden");
+  let d;
+  try { d = await api(`streams?type=${it.type}&id=${encodeURIComponent(it.id)}&vid=${encodeURIComponent(videoId)}`); } catch (e) { $("#pick").classList.add("hidden"); return; }
+  if (!d || d.error || !d.options?.length) { $("#pick").classList.add("hidden"); toast("NO HAY FUENTES PARA ESTE TÍTULO"); return; }
+  const prefEs = (S.prefs.prefAudio || "original") === "es";
+  const defI = prefEs ? Math.max(0, d.options.findIndex(o => o.lang === "es-419")) : 0;
+  const lang = await pick("¿EN QUÉ IDIOMA?", d.options.map((o, i) => {
+    const s = o.streams[0]; return { label: o.label, small: s ? `${s.res}p · ${s.size} GB` : "", v: o, def: i === defI };
+  }));
+  if (!lang) return;
+  const ps = S.prefs.prefSubs || "auto", isEs = (lang.v.lang || "").startsWith("es");
+  const subDef = ps === "always" ? true : ps === "never" ? false : !isEs;
+  const subs = await pick("¿SUBTÍTULOS EN ESPAÑOL?", [{ label: "Sí, en español", v: true, def: subDef }, { label: "No, sin subtítulos", v: false, def: !subDef }]);
+  if (!subs) return;
+  const target = await chooseDest(); if (!target) return;
+  await api("play", { item: it, videoId, start: startMs, lang: lang.v.lang, langLabel: lang.v.label, original: d.original,
+                      subs: subs.v, streams: lang.v.streams, target, epName, channel: S.ch });
+  openRemote();
+}
+
+// ── Control remoto ──
+function openRemote() { $("#remote").classList.add("open"); history.pushState({ v: "remote" }, ""); poll(); }
+$("#rClose").onclick = () => history.back();
+window.onpopstate = () => {
+  if ($("#remote").classList.contains("open")) { $("#remote").classList.remove("open"); return; }
+  if (!$("#pick").classList.contains("hidden")) { $("#pick").classList.add("hidden"); return; }
+  if ($("#sheet").classList.contains("open")) closeSheet();
+};
+async function cmd(c) { vibe(); try { await api("cmd", { c }); } catch (e) {} setTimeout(poll, 250); }
+document.querySelectorAll("[data-c]").forEach(b => b.onclick = () => cmd(b.dataset.c));
+$("#nPP").onclick = e => { e.stopPropagation(); cmd("pause"); };
+$("#now").onclick = () => openRemote();
+$("#exitBtn").onclick = async () => {
+  const o = await pick("¿SALIR DE LA PELÍCULA?", [{ label: "Sí, cortar", small: "SE GUARDA DÓNDE QUEDASTE", v: true }]);
+  if (o) { cmd("quit"); history.back(); }
+};
+$("#syncBtn").onclick = () => { $("#syncRow").classList.toggle("hidden"); $("#syncBtn").classList.toggle("on"); };
+$("#subBtn").onclick = () => {
+  const t = S.now?.tracks?.subs || [];
+  const on = t.find(x => x.selected);
+  if (on) cmd("sid no"); else if (t[0]) cmd("sid " + t[0].id); else toast("ESTE VIDEO NO TIENE SUBTÍTULOS");
+};
+// barra de tiempo: tocar o arrastrar para ir a ese punto
+(() => {
+  const bar = $("#bar"); let drag = false;
+  const at = e => { const r = bar.querySelector(".track").getBoundingClientRect(); return Math.min(1, Math.max(0, ((e.touches?.[0] || e).clientX - r.left) / r.width)); };
+  const show = k => { $("#fill").style.width = k * 100 + "%"; $("#knob").style.left = k * 100 + "%"; $("#tPos").textContent = fmt(k * (S.now?.state?.dur || 0)); };
+  bar.addEventListener("pointerdown", e => { drag = true; bar.setPointerCapture(e.pointerId); show(at(e)); });
+  bar.addEventListener("pointermove", e => { if (drag) show(at(e)); });
+  bar.addEventListener("pointerup", e => { if (!drag) return; drag = false; const k = at(e); const dur = S.now?.state?.dur || 0; if (dur) cmd("seekto " + Math.round(k * dur)); });
+  bar.dragging = () => drag;
+})();
+
+let pollT = null;
+async function poll() {
+  clearTimeout(pollT);
+  let n = null; try { n = await api("now"); } catch (e) {}
+  S.now = n;
+  const open = $("#remote").classList.contains("open");
+  if (n && n.active) {
+    const ui = n.session?.ui || {}, it = ui.play?.item || {}, st = n.state || {};
+    const tv = n.playing?.target || (ui.target && ui.target.name);
+    const img = it.type === "video" ? it.poster : (it.background || it.poster || "");
+    $("#rBg").style.backgroundImage = img ? `url("${img}")` : "";
+    $("#rTitle").textContent = (it.name || "").toUpperCase();
+    $("#rEp").textContent = ui.play?.epName || "";
+    $("#rWhere").innerHTML = tv ? `<span class="live"></span> EN LA TELE · ${esc(tv.toUpperCase())}` : `<span class="live"></span> EN LA PC`;
+    const loading = !n.state;
+    $("#rMsg").textContent = loading ? (n.status?.msg || "SINTONIZANDO…") : st.buffering ? "CARGANDO…" : st.pause ? "EN PAUSA" : "";
+    const dur = st.dur || 0, pos = st.pos || 0;
+    if (!$("#bar").dragging()) {
+      const k = dur ? pos / dur : 0;
+      $("#fill").style.width = k * 100 + "%"; $("#knob").style.left = k * 100 + "%";
+      $("#tPos").textContent = fmt(pos); $("#tLeft").textContent = "-" + fmt(dur - pos);
+    }
+    $("#ppBtn").textContent = st.pause ? "▶" : "❚❚"; $("#nPP").textContent = st.pause ? "▶" : "❚❚";
+    $("#subBtn").classList.toggle("on", !!(n.tracks?.subs || []).find(x => x.selected));
+    $("#nTh").style.backgroundImage = img ? `url("${img}")` : "";
+    $("#nTitle").textContent = it.name || "Viendo";
+    $("#nSub").textContent = (tv ? "EN LA TELE · " : "EN LA PC · ") + (loading ? "SINTONIZANDO" : fmt(pos) + " / " + fmt(dur));
+    $("#now").classList.toggle("hidden", open);
+  } else {
+    $("#now").classList.add("hidden");
+    if (open) { $("#rMsg").textContent = "NO HAY NADA REPRODUCIÉNDOSE"; }
+  }
+  pollT = setTimeout(poll, open ? 1000 : 5000);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+// ── Arranque ──
+async function start() {
+  $("#app").classList.remove("hidden");
+  const d = await api("channels");
+  S.channels = d.channels; S.casts = d.casts || []; S.prefs = d.prefs || {};
+  S.ch = S.channels.some(c => c.id === localStorage.ch) ? localStorage.ch : "stremio";
+  theme(S.ch); renderChips(); renderTabs(); loadRows(); poll();
+}
+(async () => {
+  const pin = new URLSearchParams(location.search).get("pin");
+  const h = await (await fetch("/api/hello")).json();
+  if (h.paired) { history.replaceState(null, "", "/"); start(); }
+  else { showPair(); if (pin) { $("#pin").value = pin; doPair(); } }
+})();
+</script>
+</body>
+</html>
