@@ -91,9 +91,9 @@ Item {
             }
         }
         Text {
-            visible: String(lb.cine.info?.id ?? "").startsWith("lb:")
+            visible: /^(lb|tmdb):/.test(String(lb.cine.info?.id ?? ""))
             width: side.width; wrapMode: Text.WordWrap
-            text: "Esta no tiene ficha en IMDb: no se puede buscar en Stremio."
+            text: "No hay dónde verla."
             font.family: lb.cine.sans; font.pixelSize: 16
             color: lb.th.warn
         }

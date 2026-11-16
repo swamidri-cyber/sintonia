@@ -130,6 +130,12 @@ Item {
             }
         }
         Item { width: 1; height: 6 }
+        Text {
+            visible: String(ab.it?.id ?? "").startsWith("tmdb:")
+            text: "No hay dónde verla."
+            font.family: ab.cine.sans; font.pixelSize: 20
+            color: ab.th.warn
+        }
         // botones: reproducir / continuar / tele / episodios / tráiler
         Row {
             spacing: 18

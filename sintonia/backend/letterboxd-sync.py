@@ -19,6 +19,8 @@ import json
 import os
 import re
 import subprocess
+import urllib.parse
+import urllib.request
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,6 +33,7 @@ import lugares  # carpetas de SINTONÍA
 
 STATE = os.path.join(lugares.STATE, "letterboxd-sync.json")
 # la watchlist tal cual, para la pestaña LETTERBOXD del cine (más nueva primero)
+TMDB_ADDON = "https://tmdb.elfhosted.com/" + urllib.parse.quote('{"language":"es-MX"}')
 EXPORT = os.path.join(lugares.STATE, "letterboxd-watchlist.json")
 USER = ""                   # el de tu sesión de Letterboxd (se averigua al arrancar)
 
@@ -82,7 +85,19 @@ def film_info(op, slug):
     tt = re.search(r"imdb\.com/title/(tt\d+)", h)
     name = re.search(r'<meta property="og:title" content="([^"]+)"', h)
     name = re.sub(r"\s*\(\d{4}\)$", "", html.unescape(name.group(1))) if name else slug
-    return {"imdb": tt.group(1) if tt else None, "name": name}
+    info = {"imdb": tt.group(1) if tt else None, "name": name}
+    tm = None if tt else re.search(r"themoviedb\.org/movie/(\d+)", h)
+    if not tt:
+        info["tmdb"] = ""                        # ya buscado (no volver a buscar cada vez)
+    if tm:                                       # sin IMDb: la ficha y el póster de TMDB
+        info["tmdb"] = tm.group(1)
+        try:
+            u = TMDB_ADDON + "/meta/movie/tmdb:" + tm.group(1) + ".json"
+            with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"}), timeout=20) as r:
+                info["poster"] = (json.load(r).get("meta") or {}).get("poster") or ""
+        except Exception:
+            pass
+    return info
 
 
 def mylist(action, tt, name):
@@ -98,9 +113,10 @@ def export(slugs, films):
     for i, sl in enumerate(slugs):
         f = films.get(sl) or {}
         tt = f.get("imdb")
-        out.append({"id": tt or "lb:" + sl, "type": "movie", "name": f.get("name") or sl,
+        tm = f.get("tmdb")
+        out.append({"id": tt or ("tmdb:" + tm if tm else "lb:" + sl), "type": "movie", "name": f.get("name") or sl,
                     "year": f.get("year", ""), "lbSlug": sl, "lbOrder": i + 1,
-                    "poster": f"https://images.metahub.space/poster/medium/{tt}/img" if tt else ""})
+                    "poster": f"https://images.metahub.space/poster/medium/{tt}/img" if tt else f.get("poster", "")})
     tmp = EXPORT + ".tmp"
     with open(tmp, "w") as fh:
         json.dump({"user": USER, "items": out}, fh, ensure_ascii=False)
@@ -160,6 +176,7 @@ def _sync(seed):
 
     with ThreadPoolExecutor(6) as ex:
         need = [s for s in new if s not in films]
+        need += [s for s in slugs if s in films and not films[s].get("imdb") and "tmdb" not in films[s] and s not in need]
         for s, info in zip(need, ex.map(lambda s: film_info(op, s), need)):
             films[s] = info
 

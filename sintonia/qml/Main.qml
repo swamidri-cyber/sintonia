@@ -513,7 +513,7 @@ Item {
         onExited: if (queued) { const q = queued; queued = null; Qt.callLater(() => root.fetchMeta(q)); }
     }
     function fetchMeta(it) {
-        if (!it || metaCache[it.id]) return;
+        if (!it || metaCache[it.id] || String(it.id).startsWith("tmdb:")) return;
         if (metaProc.running) { metaProc.queued = it; return; }
         metaProc.id = it.id;
         metaProc.command = it.type === "video" ? [cfg + "/youtube.py", "meta", it.id] : [cfg + "/stremio.py", "meta", it.type, it.id];
@@ -898,6 +898,7 @@ Item {
     function openSheet() {
         if (!current) return;
         if (String(current.id).startsWith("lb:")) { toast = "Sin ficha en IMDb: no se puede buscar en Stremio"; sfx.play("error"); return; }
+        if (String(current.id).startsWith("tmdb:")) { openAbout(current, "new"); return; }   // sin IMDb: solo la pestaña
         sheetIndex = 0;
         sheetOpen = true;
     }
@@ -1181,7 +1182,7 @@ Item {
     }
     // botones de reproducir (los usa la pestaña SOBRE LA PELÍCULA)
     function playActions(it) {
-        if (!it) return [];
+        if (!it || String(it.id).startsWith("tmdb:")) return [];      // sin IMDb no hay dónde verla
         const a = [];
         if (it.type === "series") {
             if (it.videoId && it.season > 0)

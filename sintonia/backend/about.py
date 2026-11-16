@@ -102,7 +102,8 @@ def crew(h, role):
 
 def letterboxd(imdb):
     op, _ = lb_module().opener()
-    with op.open(f"https://letterboxd.com/imdb/{imdb}/", timeout=25) as r:
+    path = "tmdb/" + imdb[5:] if imdb.startswith("tmdb:") else "imdb/" + imdb
+    with op.open(f"https://letterboxd.com/{path}/", timeout=25) as r:
         h = r.read().decode("utf-8", "replace")
         url = r.geturl()
     i = h.find("Similar Films")
@@ -114,14 +115,20 @@ def letterboxd(imdb):
         n = text(name)
         if n and len(n) < 60:
             people.setdefault(n.lower(), path)
-    return {"lbUrl": url, "people": people, "dop": crew(h, "Cinematography"), "editing": crew(h, "Editor"),
+    desc = re.search(r'<meta property="og:description" content="([^"]*)"', h)
+    title = re.search(r'<meta property="og:title" content="([^"]+)"', h)
+    return {"lbUrl": url, "people": people,
+            "lbDesc": html.unescape(desc.group(1)) if desc else "",
+            "lbName": re.sub(r"\s*\(\d{4}\)$", "", html.unescape(title.group(1))) if title else "", "dop": crew(h, "Cinematography"), "editing": crew(h, "Editor"),
             "music": crew(h, "Composer"), "lbRating": rating.group(1) if rating else "", "lbSimilar": sim}
 
 
 # ── Ficha ───────────────────────────────────────────────────────────────────
 def build_about(type_, id_):
-    meta = S.get_json(f"{S.CINEMETA}/meta/{type_}/{id_}.json", 24 * 3600).get("meta") or {}
+    src = TMDB_ADDON if id_.startswith("tmdb:") else S.CINEMETA     # sin IMDb: los datos de TMDB
+    meta = S.get_json(f"{src}/meta/{type_}/{id_}.json", 24 * 3600).get("meta") or {}
     base = S.norm_meta(meta) if meta else {"id": id_, "type": type_}
+    base["id"] = id_
     base["type"] = type_
     tr = [t.get("ytId") for t in (meta.get("trailerStreams") or []) if t.get("ytId")]
     rel = meta.get("released") or ""
@@ -138,7 +145,7 @@ def build_about(type_, id_):
         vids = meta.get("videos") or []
         base["seasons"] = len({v.get("season") for v in vids if v.get("season")})
     jobs = {"tmdb": lambda: tmdb_es(type_, id_)}
-    if id_.startswith("tt") and type_ == "movie":
+    if id_.startswith(("tt", "tmdb:")) and type_ == "movie":
         jobs["lb"] = lambda: letterboxd(id_)
 
     def run(k):
@@ -160,7 +167,15 @@ def build_about(type_, id_):
         base["trailer"] = t["trailer"]           # el de TMDB en español (si hay)
     if not base.get("castFull"):
         base["castFull"] = [{"name": n, "character": "", "photo": ""} for n in base["cast"]]
-    base.update(res.get("lb") or {})
+    lb = res.get("lb") or {}
+    base.update(lb)
+    if id_.startswith("tmdb:"):                  # sin IMDb: completar con Letterboxd
+        if lb.get("lbName"):
+            base["name"] = base["nameEs"] = lb["lbName"]
+        if not base.get("description") and lb.get("lbDesc"):
+            base["description"] = translate(lb["lbDesc"])
+    if base.get("rating") in ("0", "0.0"):
+        base["rating"] = ""
     base["country"] = ", ".join(COUNTRY_ES.get(c.strip(), c.strip()) for c in (base.get("country") or "").split(",") if c.strip())
     base["awards"] = awards_es(base.get("awards"))
     return base
@@ -637,7 +652,10 @@ def cmd_lbfilm(slug):
         with op.open(f"https://letterboxd.com/film/{slug}/", timeout=25) as r:
             h = r.read().decode("utf-8", "replace")
         m = re.search(r"imdb\.com/title/(tt\d+)", h)
-        return {"id": m.group(1), "type": "movie"} if m else None
+        if m:
+            return {"id": m.group(1), "type": "movie"}
+        t = re.search(r"themoviedb\.org/movie/(\d+)", h)        # sin IMDb: la ficha de TMDB
+        return {"id": "tmdb:" + t.group(1), "type": "movie"} if t else None
     d = cached("lbfilm-" + slug, 90 * 24 * 3600, get)
     out(d or {"error": "sin IMDb"})
 
