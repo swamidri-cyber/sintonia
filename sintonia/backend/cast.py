@@ -1,4 +1,4 @@
-#!/home/swami/.local/share/rice-cine/venv/bin/python
+#!/usr/bin/env python3
 """rice-cine — control del Chromecast (etapa B).
 
   cast.py discover                  → [{"name","uuid","host","model"}] (y lo guarda en caché)

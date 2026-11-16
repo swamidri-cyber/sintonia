@@ -50,6 +50,10 @@ VIEJAS = {"sub-outline-color": "sub-border-color", "sub-outline-size": "sub-bord
           "sub-border-color": "sub-outline-color", "sub-border-size": "sub-outline-size"}
 
 
+# atajos de la línea de comandos que libmpv no conoce con ese nombre
+ALIAS = {"sub-file": "sub-files", "audio-file": "audio-files", "external-file": "external-files"}
+
+
 def opciones(args):
     """["url", "--k=v", "--no-osc", …] → (url, {k: v})"""
     url, opts = None, {}
@@ -64,6 +68,7 @@ def opciones(args):
                 k, v = k[3:], "no"
             else:
                 v = "yes"
+        k = ALIAS.get(k, k)
         if k not in SIN_EFECTO:
             opts[k] = v
     return url, opts
@@ -264,9 +269,14 @@ class Anfitrion(QObject):
             if razon == _mpv.MpvEventEndFile.ERROR:
                 threading.Thread(target=self.terminar, daemon=True).start()
 
+        # primero que exista el contexto de dibujo (lo crea el hilo de dibujo de Qt
+        # cuando el video se hace visible); si mpv arranca antes, no tiene dónde dibujar
+        self._ctx_listo = threading.Event()
         self._set_activo(True)
         self.cambio.emit()
-        if url:
+        if not self._ctx_listo.wait(5):
+            sys.stderr.write("mpv: el video no se dibujó a tiempo (¿ventana escondida?)\n")
+        if url and self.m is m:
             m.play(url)
 
     def _orden(self, p):
@@ -302,13 +312,13 @@ class Anfitrion(QObject):
                 return
             self.m = None
             self.cerrando = True
-        self._set_activo(False)
         if self.ctx is not None:
             hecho = threading.Event()
             self._al_soltar = hecho
             self.cambio.emit()                      # el hilo de dibujo suelta el contexto
             hecho.wait(3)
         self.ctx = None
+        self._set_activo(False)                     # (recién ahora: escondido no se dibuja)
         try:
             m.terminate()
         except Exception:
@@ -347,6 +357,9 @@ class Anfitrion(QObject):
                 return False
             self._fallas = 0
             self.ctx.update_cb = self.cambio.emit
+            ev = getattr(self, "_ctx_listo", None)
+            if ev:
+                ev.set()
         self.ctx.render(flip_y=False, opengl_fbo={"w": w, "h": h, "fbo": fbo})
         return True
 

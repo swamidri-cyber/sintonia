@@ -495,7 +495,7 @@ Item {
     Process {
         id: pad
         running: true
-        command: [root.cfg + "/pad.py"]
+        command: [root.cfg + "/mando.py"]
         stdout: SplitParser { onRead: line => root.padEvent(line) }
         onExited: restartPad.start()
     }

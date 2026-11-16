@@ -98,7 +98,7 @@ lock = threading.Lock()
 #  ninguna mientras el cine está cerrado). replay: último evento de cada tipo,
 #  para ponerse al día al reconectarse. cmds: órdenes que llegan del cine.
 SES = {"serving": False, "clients": [], "replay": {}, "mpv": False}
-REPLAY = ("session", "status", "stats", "playing", "tracks", "state")
+REPLAY = ("session", "status", "stats", "playing", "fullscreen", "tracks", "state")
 cmds = queue.Queue()
 
 
@@ -649,7 +649,6 @@ def main():
 WEB_PORT = 20130
 CAST_DIR = os.path.join(RUNTIME, "web", "cast")
 CAST_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cast.py")
-VENV_PY = os.path.expanduser("~/.local/share/rice-cine/venv/bin/python")
 
 
 def lan_ip(host):
@@ -860,7 +859,7 @@ def run_cast(job, chosen, sub_ext, sub_key, start, sid_inband):
     except OSError:
         emit(ev="error", msg="No encuentro la red de la tele")
         return
-    cp = subprocess.Popen([VENV_PY, CAST_PY, "run", tg["uuid"], tg["host"], tg["name"]], stdin=subprocess.PIPE,
+    cp = subprocess.Popen(lugares.python(CAST_PY) + ["run", tg["uuid"], tg["host"], tg["name"]], stdin=subprocess.PIPE,
                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
     SES["mpv"] = True
     lock_c = threading.Lock()

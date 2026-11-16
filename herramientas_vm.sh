@@ -14,7 +14,7 @@ case "$1" in
     $VM 'cd ~/sintonia-app/sintonia/shaders && for f in *.frag; do ~/venv/bin/pyside6-qsb --qt6 -o $f.qsb $f || exit 1; done && ls'
     ;;
   abrir)
-    timeout 25 $VM -n '[ -f ~/app.pid ] && kill $(cat ~/app.pid) 2>/dev/null; pkill -x Xvfb; sleep 0.5
+    timeout 25 $VM -n 'pkill -f "^/home/prueba/venv/bin/python -m sintonia$"; sleep 1; pkill -9 -f "^/home/prueba/venv/bin/python -m sintonia$"; pkill -f "^/home/prueba/venv/bin/python /home/prueba/sintonia-app"; pkill -x Xvfb; sleep 0.5
       setsid Xvfb :9 -screen 0 1920x1080x24 >/dev/null 2>&1 < /dev/null & sleep 1
       cd ~/sintonia-app && DISPLAY=:9 QT_QPA_PLATFORM=xcb PULSE_SERVER=none setsid ~/venv/bin/python -m sintonia > ~/sintonia.log 2>&1 < /dev/null & echo $! > ~/app.pid; sleep 1; echo abierta'
     ;;
