@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -79,8 +80,7 @@ class Navegador(QObject):
             p.setCachePath(os.path.join(rutas.CACHE, "navegador"))
             p.setPersistentCookiesPolicy(QQuickWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
             # un Chrome común (Google no deja entrar desde "navegadores embebidos")
-            ua = p.httpUserAgent()
-            ua = ua.replace("QtWebEngine/", "Safari/").split(" Safari/")[0] + " Safari/537.36"
+            ua = re.sub(r"\s*QtWebEngine/\S+", "", p.httpUserAgent())    # queda Chrome/… Safari/…
             ua = "".join(x for x in ua if x.isprintable())
             p.setHttpUserAgent(ua)
             p.setHttpAcceptLanguage("es-419,es;q=0.9,en;q=0.7")

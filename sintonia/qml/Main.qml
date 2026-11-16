@@ -579,6 +579,7 @@ Item {
         function settingsDbg(): string { return settingsLayer.dbg() }
         function fiesta(id: string): void { root.fiestaPreview = id }
         function webLogin(s: string): void { root.openWebLogin(s) }
+        function webSave(s: string): int { return Navegador.guardar(s, "") }   // (pruebas)
         // un video de la compu (también para las pruebas)
         function playFile(path: string, name: string): void { root.playFile(path, name) }
         function find(q: string): void { root.openSearch(); root.setQuery(q); }
