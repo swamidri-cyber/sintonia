@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="pantalla" cx="50%" cy="45%" r="65%">
+      <stop offset="0" stop-color="#3a1a66"/>
+      <stop offset="0.7" stop-color="#14072a"/>
+      <stop offset="1" stop-color="#07020c"/>
+    </radialGradient>
+    <linearGradient id="caja" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1745"/>
+      <stop offset="1" stop-color="#120822"/>
+    </linearGradient>
+    <pattern id="lineas" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="1.4" fill="#000" opacity="0.35"/>
+    </pattern>
+  </defs>
+  <!-- antenas -->
+  <path d="M256 96 L176 26 M256 96 L340 22" stroke="#9a74c8" stroke-width="12" stroke-linecap="round" fill="none"/>
+  <circle cx="176" cy="26" r="13" fill="#e2ceff"/>
+  <circle cx="340" cy="22" r="13" fill="#e2ceff"/>
+  <!-- la tele -->
+  <rect x="24" y="92" width="464" height="380" rx="70" fill="url(#caja)" stroke="#3d2260" stroke-width="10"/>
+  <rect x="62" y="128" width="388" height="300" rx="58" fill="url(#pantalla)"/>
+  <rect x="62" y="128" width="388" height="300" rx="58" fill="url(#lineas)"/>
+  <text x="256" y="345" text-anchor="middle" font-family="Noto Sans CJK JP" font-weight="900" font-size="210" fill="#f6eeff">同</text>
+  <rect x="62" y="128" width="388" height="300" rx="58" fill="none" stroke="#e2ceff" stroke-opacity="0.25" stroke-width="4"/>
+  <!-- patas -->
+  <rect x="120" y="468" width="60" height="26" rx="10" fill="#120822"/>
+  <rect x="332" y="468" width="60" height="26" rx="10" fill="#120822"/>
+</svg>

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Sintonía
+GenericName=Películas, series y YouTube
+Comment=Películas, series y YouTube en una sola pantalla
+Exec=Sintonia
+Icon=sintonia
+Categories=AudioVideo;Video;Player;TV;
+Keywords=cine;películas;series;stremio;youtube;letterboxd;
+StartupWMClass=sintonia
+Terminal=false

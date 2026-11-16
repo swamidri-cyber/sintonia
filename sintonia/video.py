@@ -35,6 +35,15 @@ if sys.platform.startswith("win"):
         if os.path.exists(os.path.join(d, "libmpv-2.dll")):
             os.add_dll_directory(d)
             os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+else:
+    # empaquetada: la libmpv que viene adentro (python-mpv la busca con find_library)
+    _propia = [os.path.join(d, n) for d in (getattr(sys, "_MEIPASS", ""), os.path.dirname(sys.executable))
+               for n in ("libmpv.so.2", "libmpv.so")]
+    _propia = next((x for x in _propia if os.path.exists(x)), None)
+    if _propia:
+        import ctypes.util as _cu
+        _buscar = _cu.find_library
+        _cu.find_library = lambda n: _propia if n == "mpv" else _buscar(n)
 import mpv as _mpv  # noqa: E402
 
 QML_IMPORT_NAME = "Sintonia"
