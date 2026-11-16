@@ -37,7 +37,7 @@ Get-ChildItem sintonia\shaders\*.frag | ForEach-Object { & "$venv\Scripts\pyside
 # 5. El instalador
 $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
 if (-not (Test-Path $iscc)) {
-  Invoke-WebRequest https://jrsoftware.org/download.php/is.exe -OutFile "$herr\innosetup.exe"
+  Invoke-WebRequest https://files.jrsoftware.org/is/6/innosetup-6.7.4.exe -OutFile "$herr\innosetup.exe"
   Start-Process "$herr\innosetup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
 }
 & $iscc /Q empaque\sintonia.iss
