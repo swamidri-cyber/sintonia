@@ -12,7 +12,7 @@ Si algo falla (sin internet, sin sesión, página rara) no toca nada.
   letterboxd-sync.py --seed     solo anotar la watchlist actual, sin tocar Mi lista
 """
 import contextlib
-import fcntl
+import time
 import html
 import io
 import json
@@ -32,7 +32,7 @@ import lugares  # carpetas de SINTONÍA
 STATE = os.path.join(lugares.STATE, "letterboxd-sync.json")
 # la watchlist tal cual, para la pestaña LETTERBOXD del cine (más nueva primero)
 EXPORT = os.path.join(lugares.STATE, "letterboxd-watchlist.json")
-USER = "swamito"
+USER = ""                   # el de tu sesión de Letterboxd (se averigua al arrancar)
 
 
 def log(*a):
@@ -110,18 +110,43 @@ def export(slugs, films):
 def main():
     seed = "--seed" in sys.argv
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
-    lock = open(STATE + ".lock", "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    global USER
+    lockp = STATE + ".lock"
+    try:      # una sola a la vez (un archivo que se crea solo si no existe; vence a los 10 min)
+        if os.path.exists(lockp) and time.time() - os.path.getmtime(lockp) > 600:
+            os.unlink(lockp)
+        fd = os.open(lockp, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
     except OSError:
         return log("ya hay otra sincronización corriendo")
+    try:
+        _sync(seed)
+    finally:
+        try:
+            os.unlink(lockp)
+        except OSError:
+            pass
 
+
+def _sync(seed):
+    global USER
     op, _ = L.opener()
+    USER = L.usuario(op)
+    if not USER:
+        try:
+            os.unlink(EXPORT)            # sin cuenta: nada de la lista de otro
+        except OSError:
+            pass
+        return log("sin sesión de Letterboxd: no hay watchlist")
+    st0 = load_state() or {}
+    if st0.get("user") and st0["user"] != USER:
+        save_state({"watchlist": [], "films": {}, "user": USER})   # cambió la cuenta: de cero
     slugs = watchlist(op)
     if not slugs:
         return log("no pude leer la watchlist: no toco nada")
 
     st = load_state() or {"watchlist": [], "films": {}}
+    st["user"] = USER
     films = st["films"]                         # slug → {imdb, name}
     if not st["watchlist"]:
         seed = True                             # primera vez: no sé qué cambió
@@ -159,10 +184,7 @@ def main():
     save_state(st)
     export(slugs, films)
     log(f"watchlist {len(slugs)} · nuevas {len(new)} · salieron {len(gone)} · cambios {changed}")
-    if changed:
-        # si el cine está abierto, que recargue Mi lista
-        subprocess.run(["qs", "-c", "rice-cine", "ipc", "call", "cine", "refreshLibrary"],
-                       capture_output=True, timeout=10)
+    # (la app recarga Mi lista cuando esto termina)
 
 
 if __name__ == "__main__":

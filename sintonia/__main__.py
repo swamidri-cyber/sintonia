@@ -62,6 +62,11 @@ def abrir() -> int:
     from . import compat, rutas  # registra los tipos de QML  # noqa: F401
     # el video de mpv se dibuja con OpenGL (en Windows Qt usaría Direct3D)
     QQuickWindow.setGraphicsApi(QSGRendererInterface.GraphicsApi.OpenGL)
+    try:   # el navegador para iniciar sesión (tiene que arrancar antes que la app)
+        from PySide6.QtWebEngineQuick import QtWebEngineQuick
+        QtWebEngineQuick.initialize()
+    except ImportError:
+        pass
 
     QGuiApplication.setApplicationName("Sintonía")
     QGuiApplication.setOrganizationName("Sintonia")
@@ -73,6 +78,7 @@ def abrir() -> int:
     import locale
     locale.setlocale(locale.LC_NUMERIC, "C")   # libmpv lo pide
     from . import video  # noqa: F401  (MpvVideo + el canal "mpv")
+    from . import navegador  # noqa: F401  (Navegador: inicio de sesión web)
     video.anfitrion()
     icono = os.path.join(rutas.DATOS, "icono.png")
     if os.path.exists(icono):
@@ -83,6 +89,15 @@ def abrir() -> int:
         QFontDatabase.addApplicationFont(os.path.join(carpeta, f))
 
     servidor = compat.ServidorIpc(nombre_ipc())  # noqa: F841
+    app.aboutToQuit.connect(compat.matar_hijos)
+    # cerrar bien también si la matan desde afuera (Ctrl+C, apagar la PC…)
+    import signal
+    from PySide6.QtCore import QTimer
+    for sg in (signal.SIGINT, signal.SIGTERM) + ((signal.SIGHUP,) if hasattr(signal, "SIGHUP") else ()):
+        signal.signal(sg, lambda *_: app.quit())
+    latido = QTimer()            # (para que Python atienda las señales mientras corre Qt)
+    latido.start(500)
+    latido.timeout.connect(lambda: None)
     engine = QQmlApplicationEngine()
     engine.load(QUrl.fromLocalFile(os.path.join(rutas.DATOS, "qml", "Main.qml")))
     if not engine.rootObjects():

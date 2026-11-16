@@ -2,9 +2,8 @@
 """rice-cine — reseñas en Letterboxd (etapa 5).
 
 Letterboxd no da su API a proyectos personales: esto usa TU sesión de
-Letterboxd en Zen (las cookies se leen en el momento de una copia temporal que
-se borra enseguida; no se guardan) y carga la entrada de diario igual que el
-formulario "Log" de la web.
+Letterboxd (la que iniciás en SINTONÍA; si no hay, la de Zen/Firefox) y carga
+la entrada de diario igual que el formulario "Log" de la web.
 
   letterboxd.py check <tt…>        quién sos y qué película es (no publica nada)
   letterboxd.py log <tt…> <estrellas 0-10> <like 0|1> <volví a verla 0|1> <spoilers 0|1> [reseña]
@@ -27,6 +26,7 @@ import urllib.error
 import urllib.request
 
 import lugares  # carpetas de SINTONÍA
+import cuentas
 
 HOME = os.path.expanduser("~")
 BASE = "https://letterboxd.com"
@@ -36,41 +36,25 @@ def out(obj):
     sys.stdout.write(json.dumps(obj, ensure_ascii=False))
 
 
-def zen_ua():
-    """El mismo navegador que tus cookies (Cloudflare mira que coincida)."""
-    ver = "156.0"
-    for ini in glob.glob("/opt/zen*/platform.ini") + glob.glob("/usr/lib/zen*/platform.ini"):
-        m = re.search(r"^Milestone=(\d+)", open(ini).read(), re.M)
-        if m:
-            ver = m.group(1) + ".0"
-    return f"Mozilla/5.0 (X11; Linux x86_64; rv:{ver}) Gecko/20100101 Firefox/{ver}"
-
-
 def opener():
-    profs = glob.glob(HOME + "/.config/zen/*/cookies.sqlite") + glob.glob(HOME + "/.zen/*/cookies.sqlite")
-    if not profs:
-        raise RuntimeError("no encontré el perfil de Zen")
-    src = max(profs, key=os.path.getsize)
-    jar = http.cookiejar.CookieJar()
-    with tempfile.TemporaryDirectory(dir=lugares.RUNTIME) as tmp:
-        dst = os.path.join(tmp, "c.sqlite")
-        shutil.copy(src, dst)
-        for ext in ("-wal", "-shm"):
-            if os.path.exists(src + ext):
-                shutil.copy(src + ext, dst + ext)
-        db = sqlite3.connect(dst)
-        rows = db.execute("select name, value, host, path, isSecure, expiry from moz_cookies "
-                          "where host like '%letterboxd.com'").fetchall()
-        db.close()
-    for name, value, host, path, secure, expiry in rows:
-        exp = int(expiry) if expiry else None
-        if exp and exp > 10 ** 11:
-            exp //= 1000
-        jar.set_cookie(http.cookiejar.Cookie(0, name, value, None, False, host, True, host.startswith("."),
-                                             path or "/", True, bool(secure), exp, False, None, None, {}))
+    """Tu sesión de Letterboxd: la de la app (o la de Zen/Firefox, si no hay)."""
+    jar, ua = cuentas.sesion_web("letterboxd", "letterboxd.com")
+    if jar is None:
+        jar = http.cookiejar.CookieJar()
     op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    op.addheaders = [("User-Agent", zen_ua()), ("Accept-Language", "es-AR,es;q=0.9,en;q=0.7")]
+    op.addheaders = [("User-Agent", ua), ("Accept-Language", "es-AR,es;q=0.9,en;q=0.7")]
     return op, jar
+
+
+def usuario(op):
+    """Tu nombre de usuario de Letterboxd según la sesión ("" si no hay)."""
+    try:
+        with op.open(f"{BASE}/", timeout=25) as r:
+            html = r.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+    m = re.search(r'person\.username\s*=\s*"([^"]*)"', html)
+    return m.group(1) if m else ""
 
 
 def film(op, imdb):

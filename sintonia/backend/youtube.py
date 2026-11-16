@@ -23,27 +23,32 @@ import sys
 import time
 
 import lugares  # carpetas de SINTONÍA
+import cuentas
 
 HOME = os.path.expanduser("~")
 CACHE = lugares.CACHE
 STATE = lugares.STATE
 PROGRESS = os.path.join(STATE, "youtube.json")
-YTDLP = HOME + "/.local/bin/yt-dlp" if os.path.exists(HOME + "/.local/bin/yt-dlp") else "yt-dlp"
+def _ytdlp():
+    """yt-dlp: el de la app (módulo de Python), o uno instalado."""
+    import shutil
+    try:
+        import yt_dlp  # noqa: F401
+        return lugares.python(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp.py"))
+    except ImportError:
+        pass
+    p = HOME + "/.local/bin/yt-dlp"
+    return [p if os.path.exists(p) else (shutil.which("yt-dlp") or "yt-dlp")]
+
+
+YTDLP_CMD = _ytdlp()
+YTDLP = YTDLP_CMD[-1] if len(YTDLP_CMD) == 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp.py")
 FEEDS = {"subs": ":ytsubs", "rec": ":ytrec", "later": ":ytwatchlater", "history": ":ythistory",
          "liked": "https://www.youtube.com/playlist?list=LL"}
 
 
-def zen_profile():
-    """Perfil de Zen con más cookies (el que se usa de verdad)."""
-    profs = glob.glob(HOME + "/.config/zen/*/cookies.sqlite") + glob.glob(HOME + "/.zen/*/cookies.sqlite")
-    if not profs:
-        return None
-    return os.path.dirname(max(profs, key=os.path.getsize))
-
-
 def cookie_args():
-    p = zen_profile()
-    return ["--cookies-from-browser", "firefox:" + p] if p else []
+    return cuentas.args_ytdlp()
 
 
 def out(obj):
@@ -54,7 +59,7 @@ def ytdlp_json(args, key, ttl):
     path = os.path.join(CACHE, "yt-" + hashlib.sha1(key.encode()).hexdigest()[:16] + ".json")
     if os.path.exists(path) and time.time() - os.path.getmtime(path) < ttl:
         return json.load(open(path))
-    r = subprocess.run([YTDLP, "-J", "--no-warnings"] + cookie_args() + args, capture_output=True, text=True, timeout=90)
+    r = subprocess.run(YTDLP_CMD + ["-J", "--no-warnings"] + cookie_args() + args, capture_output=True, text=True, timeout=90)
     if r.returncode != 0 or not r.stdout.strip():
         if os.path.exists(path):
             return json.load(open(path))
@@ -175,17 +180,10 @@ def cmd_progress(id_, pos, dur, title="", channel=""):
 
 # ── Inicio de YouTube (API interna, con tu sesión de Zen) ──────────────────
 def yt_cookies():
-    import shutil, sqlite3, tempfile
-    src = os.path.join(zen_profile(), "cookies.sqlite")
-    with tempfile.TemporaryDirectory(dir=lugares.RUNTIME) as t:
-        shutil.copy(src, t + "/c.sqlite")
-        for e in ("-wal", "-shm"):
-            if os.path.exists(src + e):
-                shutil.copy(src + e, t + "/c.sqlite" + e)
-        db = sqlite3.connect(t + "/c.sqlite")
-        ck = {n: v for n, v in db.execute("select name, value from moz_cookies where host like '%youtube.com'")}
-        db.close()
-    return ck
+    jar, _ua = cuentas.sesion_web("youtube", "youtube.com")
+    if jar is None:
+        raise RuntimeError("nologin")
+    return {c.name: c.value for c in jar if c.domain.endswith("youtube.com")}
 
 
 def browse(body, ck, endpoint="browse"):
@@ -196,7 +194,7 @@ def browse(body, ck, endpoint="browse"):
     hdr = {"Cookie": "; ".join(f"{k}={v}" for k, v in ck.items()), "Authorization": f"SAPISIDHASH {ts}_{h}",
            "Origin": "https://www.youtube.com", "X-Origin": "https://www.youtube.com", "X-Goog-AuthUser": "0",
            "Content-Type": "application/json",
-           "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0"}
+           "User-Agent": cuentas.sesion_web("youtube", "youtube.com")[1]}
     body = dict(body, context={"client": {"clientName": "WEB", "clientVersion": "2.20260901.00.00", "hl": "es-419", "gl": "AR"}})
     req = urllib.request.Request(f"https://www.youtube.com/youtubei/v1/{endpoint}?prettyPrint=false",
                                  data=json.dumps(body).encode(), headers=hdr)

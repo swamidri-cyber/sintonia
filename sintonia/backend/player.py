@@ -1275,22 +1275,46 @@ def run_cast(job, chosen, sub_ext, sub_key, start, sid_inband):
     emit(ev="ended", pos=st["pos"], dur=st["dur"], finished=finished)
 
 
-def youtube(job):
-    """YouTube: mpv abre el video con yt-dlp (con tu sesión de Zen), hasta 1080p."""
+def youtube_urls(vid):
+    """yt-dlp → (video, audio, encabezados HTTP) hasta 1080p, sin AV1."""
     import youtube as yt
+    fmt = "bv*[height<=1080][vcodec!*=av01]+ba/bv*[height<=1080]+ba/b"
+    r = subprocess.run(yt.YTDLP_CMD + ["-J", "--no-warnings", "--no-playlist", "-f", fmt,
+                                       "https://www.youtube.com/watch?v=" + vid],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0 or not r.stdout.strip():
+        raise RuntimeError((r.stderr.strip().split("\n") or ["yt-dlp falló"])[-1][:160])
+    d = json.loads(r.stdout)
+    fs = d.get("requested_formats") or [d]
+    video = fs[0]["url"]
+    audio = fs[1]["url"] if len(fs) > 1 else None
+    hdr = fs[0].get("http_headers") or d.get("http_headers") or {}
+    return video, audio, hdr
+
+
+def youtube(job):
+    """YouTube: yt-dlp saca las direcciones y mpv las abre, hasta 1080p."""
     vid = job["id"].removeprefix("yt:")
     emit(ev="status", msg="SINTONIZANDO YOUTUBE…")
     if job.get("target"):
         run_cast(job, {"s": {"title": "YouTube", "res": 1080, "hash": ""}, "url": ""}, None, "", float(job.get("start") or 0), None)
         return
-    # sin la sesión: con las cookies de Zen YouTube contesta "The page needs to
-    # be reloaded" y no deja bajar el video (la sesión solo sirve para las listas)
-    args = ["mpv", "https://www.youtube.com/watch?v=" + vid,
-            "--ytdl-format=bv*[height<=1080][vcodec!*=av01]+ba/bv*[height<=1080]+ba/b",
-            f"--script-opts=ytdl_hook-ytdl_path={yt.YTDLP}",
-            "--fs", "--wayland-app-id=rice-cine-player", "--title=" + job.get("name", "YouTube"),
-            "--no-osc", "--osd-level=0", "--osd-playing-msg=", "--keep-open=yes",
-            "--save-position-on-quit=no", "--no-resume-playback", "--cursor-autohide=always", "--sid=no"]
+    # sin la sesión: con las cookies YouTube contesta "The page needs to be
+    # reloaded" y no deja bajar el video (la sesión solo sirve para las listas)
+    try:
+        video, audio, hdr = youtube_urls(vid)
+    except Exception as e:
+        emit(ev="error", msg="YouTube: " + str(e)[:150])
+        return
+    args = ["mpv", video, "--keep-open=yes", "--save-position-on-quit=no", "--no-resume-playback", "--sid=no",
+            "--force-media-title=" + job.get("name", "YouTube")]
+    if audio:
+        args.append("--audio-file=" + audio)
+    for k, v in (hdr or {}).items():       # (las listas de mpv se cortan en las comas: el UA va aparte)
+        if k.lower() == "user-agent":
+            args.append("--user-agent=" + v)
+        elif k.lower() in ("referer", "origin") and "," not in v:
+            args.append(f"--http-header-fields-append={k}: {v}")
     start = float(job.get("start") or 0)
     if start > 5:
         args.append(f"--start={start:.0f}")

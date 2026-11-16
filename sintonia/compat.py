@@ -69,7 +69,14 @@ class Quickshell(QObject):
     def execDetached(self, argv):
         cmd = preparar_comando(_lista(argv))
         if cmd:
-            QProcess.startDetached(cmd[0], cmd[1:], "", )
+            p = QProcess()
+            p.setProgram(cmd[0])
+            p.setArguments(cmd[1:])
+            env = QProcessEnvironment.systemEnvironment()
+            for k, v in rutas.entorno_backend().items():
+                env.insert(k, v)
+            p.setProcessEnvironment(env)
+            p.startDetached()
 
     @Property("QVariantList", constant=True)
     def screens(self):
@@ -268,6 +275,8 @@ class Process(QObject):
         p.finished.connect(lambda code, st: self._termino(p, code, st))
         p.errorOccurred.connect(lambda e: self._fallo(p, e))
         self._p = p
+        _VIVOS.add(p)
+        p.finished.connect(lambda *_: _VIVOS.discard(p))
         p.start(cmd[0], cmd[1:])
         self.runningChanged.emit()
         self.started.emit()
@@ -439,6 +448,23 @@ def _texto(v) -> str:
     return v if isinstance(v, str) else bytes(v).decode()
 
 
+# Procesos que lanzó la interfaz: se cierran con la app (si no, el servidor del
+# teléfono, el joystick… quedan andando solos)
+_VIVOS: set = set()
+
+
+def matar_hijos():
+    for p in list(_VIVOS):
+        try:
+            if p.state() != QProcess.NotRunning:
+                p.terminate()
+                if not p.waitForFinished(800):
+                    p.kill()
+        except RuntimeError:
+            pass
+    _VIVOS.clear()
+
+
 def llamar_ipc(target: str, funcion: str, args: list[str]) -> str:
     obj = _HANDLERS.get(target)
     if obj is None:
@@ -537,6 +563,15 @@ class App(QObject):
     def url(self, relativo):
         """URL de un archivo de la app (shaders, sonidos…)."""
         return QUrl.fromLocalFile(os.path.join(rutas.DATOS, relativo)).toString()
+
+    @Slot(str, result=str)
+    def fileUrl(self, path):
+        """URL de cualquier archivo (en Windows, con la letra de la unidad bien)."""
+        return QUrl.fromLocalFile(path).toString()
+
+    @Slot(str, result=bool)
+    def exists(self, path):
+        return os.path.exists(path)
 
     @Slot(str, str)
     def writeFile(self, path, texto):

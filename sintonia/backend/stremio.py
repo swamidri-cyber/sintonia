@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """rice-cine — datos de Stremio para el modo cine (Quickshell rice-cine).
 
-Lee la sesión de la app de Stremio (flatpak) y habla con la API de Stremio y
+Usa tu cuenta de Stremio (la que conectás en SINTONÍA) y habla con la API de Stremio y
 con los addons del usuario. Siempre imprime UN JSON por stdout.
 
   stremio.py library                         seguir viendo / ver de nuevo / mi lista
@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import lugares  # carpetas de SINTONÍA
+import cuentas
 
 HOME = os.path.expanduser("~")
 CACHE = lugares.CACHE
@@ -61,8 +62,17 @@ def out(obj):
     sys.stdout.flush()
 
 
-# ── Sesión de la app de Stremio ─────────────────────────────────────────────
-def profile():
+# ── Sesión de Stremio ──────────────────────────────────────────────────────
+#  1. la cuenta conectada en SINTONÍA (cuentas/stremio.json, con sus addons)
+#  2. si no, la de la app de Stremio instalada (flatpak), como hacía rice-cine
+#  3. si no, sin cuenta: los addons de catálogo y subtítulos de abajo (ninguno
+#     de fuentes: para ver películas hace falta tu cuenta con tus addons)
+DEFAULT_ADDONS = [CINEMETA + "/manifest.json", STREAMING + "/manifest.json", TOPSTREAM + "/manifest.json",
+                  "https://hispasubs.ak-forge.workers.dev/manifest.json"]
+ADDONS_TTL = 6 * 3600
+
+
+def stremio_app_profile():
     for path in glob.glob(STORAGE):
         db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
@@ -75,11 +85,76 @@ def profile():
     return {}
 
 
+def default_addons():
+    res = []
+    for url in DEFAULT_ADDONS:
+        try:
+            res.append({"transportUrl": url, "manifest": get_json(url, 7 * 86400)})
+        except Exception:
+            pass
+    return res
+
+
+def profile():
+    ses = cuentas.leer_json("stremio.json")
+    if ses and ses.get("authKey"):
+        if time.time() - ses.get("addonsTs", 0) > ADDONS_TTL or not ses.get("addons"):
+            try:
+                r = api("addonCollectionGet", {"type": "AddonCollectionGet", "authKey": ses["authKey"], "update": True})
+                ses["addons"] = r.get("addons") or []
+                ses["addonsTs"] = time.time()
+                cuentas.escribir_json("stremio.json", ses)
+            except Exception:
+                pass
+        return {"auth": {"key": ses["authKey"]}, "addons": ses.get("addons") or default_addons(),
+                "user": {"email": ses.get("email", "")}}
+    if os.environ.get("SINTONIA_SIN_STREMIO_APP") != "1":
+        p = stremio_app_profile()
+        if (p.get("auth") or {}).get("key"):
+            return p
+    return {"auth": None, "addons": default_addons()}
+
+
 def auth_key():
     return ((profile().get("auth") or {}).get("key")) or None
 
 
-# ── Red con caché ───────────────────────────────────────────────────────────
+def cmd_login(email):
+    """La contraseña llega por stdin (no queda en la lista de procesos)."""
+    pw = sys.stdin.readline().rstrip("\n")
+    try:
+        r = api("login", {"type": "Login", "email": email, "password": pw, "facebook": False})
+    except Exception as e:
+        msg = str(e)
+        if "password" in msg.lower() or "wrong" in msg.lower() or "passphrase" in msg.lower():
+            msg = "Mail o contraseña incorrectos"
+        elif "user not found" in msg.lower():
+            msg = "No hay una cuenta de Stremio con ese mail"
+        return out({"error": msg[:160]})
+    ses = {"authKey": r["authKey"], "email": (r.get("user") or {}).get("email", email)}
+    cuentas.escribir_json("stremio.json", ses)
+    profile()                          # baja tus addons ya
+    out({"ok": True, "user": ses["email"]})
+
+
+def cmd_logout():
+    ses = cuentas.leer_json("stremio.json") or {}
+    if ses.get("authKey"):
+        try:
+            api("logout", {"type": "Logout", "authKey": ses["authKey"]})
+        except Exception:
+            pass
+    cuentas.borrar("stremio.json")
+    out({"ok": True})
+
+
+def cmd_whoami():
+    p = profile()
+    k = (p.get("auth") or {}).get("key")
+    out({"user": (p.get("user") or {}).get("email", "") if k else "", "logged": bool(k),
+         "addons": [a.get("manifest", {}).get("name", "?") for a in p.get("addons", [])]})
+
+
 def _cache_path(key):
     return os.path.join(CACHE, hashlib.sha1(key.encode()).hexdigest()[:20] + ".json")
 
@@ -496,7 +571,8 @@ def main():
             raise SystemExit(__doc__)
         {"library": cmd_library, "catalog": cmd_catalog, "catalogs": cmd_catalogs, "search": cmd_search,
          "meta": cmd_meta, "mylist": cmd_mylist,
-         "streams": cmd_streams, "subs": cmd_subs, "progress": cmd_progress}[a[0]](*a[1:])
+         "streams": cmd_streams, "subs": cmd_subs, "progress": cmd_progress,
+         "login": cmd_login, "logout": cmd_logout, "whoami": cmd_whoami}[a[0]](*a[1:])
     except KeyError:
         out({"error": "comando desconocido"})
     except Exception as e:

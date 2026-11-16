@@ -136,7 +136,7 @@ Item {
             onStreamFinished: {
                 let d = null; try { d = JSON.parse(text); } catch (e) {}
                 if (!d || d.error) {
-                    root.loginError = d?.error === "nologin" ? "No hay sesión de Stremio: abrí la app e iniciá sesión"
+                    root.loginError = d?.error === "nologin" ? "Sin cuenta de Stremio: conectala en CONFIGURACIÓN → CUENTAS (tecla coma o ≡)"
                                     : "Sin conexión con Stremio";
                     return;
                 }
@@ -503,7 +503,12 @@ Item {
     function padEvent(line) {
         const p = line.split(" ");
         if (p[0] === "pad") { padName = p[1] === "connected" ? p.slice(2).join(" ") : ""; return; }
-        if (modal) return;                      // manda la configuración
+        if (modal && !settingsLayer.open && !webLogin.open) return;   // (rice-settings manda)
+        if (settingsLayer.open || webLogin.open) {
+            if (p[0] === "nav") navigate(p[1]);
+            else if (p[0] === "press") button(p[1]);
+            return;
+        }
         if (!open) {
             if (ytActive && p[0] === "press" && p[1] === "view") returnFromYouTube(true);
             return;
@@ -569,6 +574,11 @@ Item {
         // pruebas: abrir la pantalla de reseña de una película (tt…)
         function review(id: string, name: string): void { root.openReview(id, name, false) }
         function go(t: string): void { root.setTab(t) }
+        function settings(): void { root.openSettings() }
+        function welcome(): void { settingsLayer.show(true) }
+        function settingsDbg(): string { return settingsLayer.dbg() }
+        function fiesta(id: string): void { root.fiestaPreview = id }
+        function webLogin(s: string): void { root.openWebLogin(s) }
         // un video de la compu (también para las pruebas)
         function playFile(path: string, name: string): void { root.playFile(path, name) }
         function find(q: string): void { root.openSearch(); root.setQuery(q); }
@@ -689,6 +699,8 @@ Item {
     }
 
     function navigate(dir) {
+        if (webLogin.open) return;
+        if (settingsLayer.open) { settingsLayer.navigate(dir); return; }
         if (phase !== "ui" || !open) return;
         mouseMode = false; touched = true;
         const before = [rowIndex, col, sheetIndex, pickerIndex, epIndex, epSeason, sheetOpen, playIndex, ctrlIndex, ctrlFocus, trackIndex].join();
@@ -728,6 +740,8 @@ Item {
         if (curRow?.moreKey && col > curRow.items.length - 6) requestSrc(curRow.moreKey, true);
     }
     function button(b) {
+        if (webLogin.open) { if (b === "b" || b === "guide") webLogin.cerrar(); return; }
+        if (settingsLayer.open) { settingsLayer.button(b); return; }
         if (phase !== "ui" || !open) return;
         if (b === "menu") { openSettings(); return; }       // ≡ = CONFIGURACIÓN (también viendo algo)
         mouseMode = false; touched = true;
@@ -1195,11 +1209,38 @@ Item {
     }
     property bool modal: false               // la configuración está abierta encima
     function openSettings() {
-        const t = theme;
-        const j = JSON.stringify({ bg: String(t.bg), deep: String(t.deep), line: String(t.line), dim: String(t.dim),
-                                   fg: String(t.fg), hi: String(t.hi), warn: String(t.warn) });
-        Quickshell.execDetached(["qs", "-c", "rice-settings", "ipc", "call", "settings", "open", "cine", j]);
+        if (webLogin.open) return;
+        settingsLayer.open ? settingsLayer.hide() : settingsLayer.show(false);
     }
+    // ── Para CONFIGURACIÓN, el navegador y las fiestas ─────────────────────
+    function playSfx(n) { sfx.play(n); }
+    function stageFocus() { stage.forceActiveFocus(); }
+    function quitApp() { App.quit(); }
+    function openWebLogin(s) { webLogin.abrir(s); }
+    function refreshAll() {
+        libProc.running = true;
+        if (platform === "youtube") { srcCache = ({}); }
+    }
+    property string fiestaPreview: ""
+    readonly property var fiestaList: fiestas.list
+    readonly property string fiestaHoy: fiestas.hoy
+    // primera vez: la bienvenida (CUENTAS)
+    onPhaseChanged: if (phase === "ui" && open && !welcomeChecked) welcomeTimer.restart()
+    Timer { id: welcomeTimer; interval: 900; onTriggered: root.maybeWelcome() }
+    property bool welcomeChecked: false
+    function maybeWelcome() {
+        if (welcomeChecked) return;
+        welcomeChecked = true;
+        if (!App.exists(App.configDir + "/bienvenida.json")) settingsLayer.show(true);
+    }
+    // el servidor del teléfono y de la tele (Chromecast) mientras la app está abierta
+    // (si el puerto está ocupado, por ejemplo por rice-cine, prueba unas veces y deja)
+    property int webTries: 0
+    Process { id: webServer; running: true; command: [root.cfg + "/web.py"]; onExited: if (++root.webTries < 4) webRestart.start() }
+    Timer { id: webRestart; interval: 5000; onTriggered: webServer.running = true }
+    // tu watchlist de Letterboxd → Mi lista (como el servicio de rice-cine, cada 15 min)
+    Process { id: lbSync; command: [root.cfg + "/letterboxd-sync.py"]; onExited: root.refreshAll() }
+    Timer { interval: 15 * 60 * 1000; repeat: true; running: true; triggeredOnStart: true; onTriggered: if (!lbSync.running) lbSync.running = true }
 
     // ── En la tele (etapa B): Chromecasts de la casa ───────────────────────
     property var    castDevices: []          // [{ name, uuid, host, model }] (cast.py discover)
@@ -2856,6 +2897,22 @@ Item {
                     fragmentShader: App.url("shaders/crtfx.frag.qsb")
                 }
             }
+        }
+
+        // ── Fiestas, CONFIGURACIÓN y el navegador para las cuentas (encima de todo) ──
+        Fiestas {
+            id: fiestas
+            anchors.fill: parent
+            on: root.cs.fiestas ?? true
+            preview: root.fiestaPreview
+            hidden: root.playFull || root.phase !== "ui" || webLogin.open
+        }
+        SettingsLayer { id: settingsLayer; anchors.fill: parent; cine: root }
+        WebLogin {
+            id: webLogin
+            anchors.fill: parent
+            cine: root
+            onListo: (s, u) => settingsLayer.webLoggedIn(s, u)
         }
     }
 

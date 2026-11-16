@@ -8,3 +8,4 @@ pychromecast
 yt-dlp
 pysdl2
 pysdl2-dll
+segno
