@@ -23,6 +23,7 @@ import sqlite3
 import sys
 import tempfile
 import urllib.parse
+import urllib.error
 import urllib.request
 
 import lugares  # carpetas de SINTONÍA
@@ -94,35 +95,55 @@ def cmd_check(imdb):
     out({"user": f["user"], "film": f["name"], "url": f["url"]})
 
 
+def film_json(op, url):
+    """Ficha de la película (lid, uid, csrf), la misma que pide el formulario de la web."""
+    req = urllib.request.Request(url.rstrip("/") + "/json/", headers={
+        "X-Requested-With": "XMLHttpRequest", "Accept": "application/json", "Referer": url})
+    with op.open(req, timeout=25) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
 def cmd_log(imdb, rating, liked, rewatch, spoilers, review=""):
+    # Desde 2026 la web guarda el diario por su API (/api/v0/production-log-entries);
+    # la vieja /s/save-diary-entry devuelve 404.
     review = review.strip()
     op, jar = opener()
     f = film(op, imdb)
     if not f["user"]:
         return out({"error": "nologin"})
-    # el token tiene que coincidir con la cookie que Letterboxd acaba de dar
-    csrf = next((c.value for c in jar if c.name == "com.xk72.webparts.csrf"), f["csrf"])
-    form = [("__csrf", csrf), ("json", "true"), ("viewingId", ""), ("viewingableUid", f["uid"]),
-            ("specifiedDate", "true"), ("viewingDateStr", datetime.date.today().isoformat()),
-            ("review", review), ("tags", ""), ("rating", str(max(0, min(10, int(rating)))))]
-    if liked == "1":
-        form.append(("liked", "true"))
-    if rewatch == "1":
-        form.append(("rewatch", "true"))
-    if spoilers == "1":
-        form.append(("containsSpoilers", "true"))
-    req = urllib.request.Request(f"{BASE}/s/save-diary-entry", data=urllib.parse.urlencode(form).encode(),
-                                 headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                                          "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": f["url"],
-                                          "Accept": "application/json, text/javascript, */*; q=0.01"})
-    with op.open(req, timeout=25) as r:
-        body = r.read().decode("utf-8", "replace")
+    fj = film_json(op, f["url"])
+    csrf = fj.get("csrf") or f["csrf"]
+    stars = max(0, min(10, int(rating)))
+    body = {"productionId": fj["lid"],
+            "diaryDetails": {"diaryDate": datetime.date.today().isoformat(), "rewatch": rewatch == "1"},
+            "tags": [], "like": liked == "1"}
+    if review:
+        body["review"] = {"text": review, "containsSpoilers": spoilers == "1"}
+    if stars:
+        body["rating"] = stars / 2
+    req = urllib.request.Request(f"{BASE}/api/v0/production-log-entries", data=json.dumps(body).encode(),
+                                 method="POST",
+                                 headers={"Content-Type": "application/json; charset=UTF-8",
+                                          "Accept": "application/json", "X-CSRF-TOKEN": csrf,
+                                          "Origin": BASE, "Referer": f["url"]})
     try:
-        res = json.loads(body)
+        with op.open(req, timeout=25) as r:
+            text = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        text = e.read().decode("utf-8", "replace")
+        try:
+            res = json.loads(text)
+        except Exception:
+            return out({"error": f"Letterboxd respondió {e.code}"})
+        msgs = [m.get("title") or m.get("message") or m.get("code") for m in res.get("messages", []) if isinstance(m, dict)]
+        return out({"error": "; ".join(x for x in msgs if x) or res.get("message") or f"Letterboxd respondió {e.code}"})
+    try:
+        res = json.loads(text)
     except Exception:
-        return out({"error": "respuesta rara de Letterboxd", "body": body[:200]})
-    if res.get("result") is False or res.get("errorCodes") or res.get("messages") and not res.get("result"):
-        return out({"error": "; ".join(res.get("messages") or res.get("errorCodes") or ["no se pudo"])})
+        return out({"error": "respuesta rara de Letterboxd", "body": text[:200]})
+    errs = [m for m in res.get("messages", []) if isinstance(m, dict) and m.get("type") == "Error"]
+    if errs or not res.get("logEntry"):
+        return out({"error": "; ".join(m.get("title") or m.get("code") or "" for m in errs) or "no se pudo"})
     out({"ok": True, "user": f["user"], "film": f["name"], "url": f["url"]})
 
 
