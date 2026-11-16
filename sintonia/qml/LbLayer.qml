@@ -117,13 +117,14 @@ Item {
             required property var modelData
             required property int index
             readonly property bool on: lb.cine.lbIndex === index
+            readonly property bool hov: lb.cine.mouseMode && cellMa.containsMouse
             width: grid.cellWidth; height: grid.cellHeight
             Rectangle {
                 id: frame
                 anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 12 }
                 width: 168; height: 252; radius: 8
                 color: lb.th.deep
-                border.color: cell.on ? lb.th.hi : "transparent"; border.width: 3
+                border.color: cell.on || cell.hov ? lb.th.hi : "transparent"; border.width: 3
                 scale: cell.on ? 1.07 : 1
                 Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 clip: true
@@ -188,13 +189,13 @@ Item {
                 color: cell.on ? "white" : lb.th.dim
             }
             MouseArea {
+                id: cellMa
                 anchors.fill: parent
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
-                onPositionChanged: (m) => { if (lb.cine.mouseMode && !lb.cine.sheetOpen && lb.cine.realMove(parent, m)) lb.cine.lbIndex = cell.index }
                 onClicked: (m) => {
-                    if (m.button === Qt.RightButton) { lb.cine.button("b"); return; }
+                    if (m.button === Qt.RightButton) { lb.cine.mouseBack(); return; }
                     lb.cine.lbIndex = cell.index; lb.cine.openSheet();
                 }
             }

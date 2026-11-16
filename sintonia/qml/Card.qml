@@ -7,6 +7,7 @@ Item {
     id: card
     required property var item
     property bool selected: false
+    property bool hover: false                // mouse encima: solo el marco, sin elegirla
     property bool rowFocused: true            // la fila de la tarjeta es la elegida
     property var  theme
 
@@ -24,9 +25,9 @@ Item {
         color: "transparent"
         border.width: 3
         border.color: card.theme.hi
-        opacity: card.selected ? 1 : 0
+        opacity: card.selected || card.hover ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 140 } }
-        layer.enabled: card.selected
+        layer.enabled: card.selected || card.hover
         layer.effect: MultiEffect { shadowEnabled: true; shadowColor: card.theme.glow; shadowBlur: 1.0; blurMax: 40; shadowHorizontalOffset: 0; shadowVerticalOffset: 0 }
     }
 
@@ -36,7 +37,7 @@ Item {
         radius: 6
         color: card.theme.deep
         border.width: 1
-        border.color: card.selected ? card.theme.hi : card.theme.line
+        border.color: card.selected || card.hover ? card.theme.hi : card.theme.line
         clip: true
 
         // Imagen de fondo; si no hay, el póster recortado

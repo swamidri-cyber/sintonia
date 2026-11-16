@@ -12,6 +12,7 @@ con los addons del usuario. Siempre imprime UN JSON por stdout.
   stremio.py streams <movie|series> <id> <videoId>   fuentes agrupadas por idioma
   stremio.py subs <movie|series> <videoId> [archivo] [tamaño]   subtítulos en español
   stremio.py progress <movie|series> <id> <videoId> <ms> <ms total> [visto 0|1]
+  stremio.py dismiss <id>     quitar de "seguir viendo"
 
 Cachés en ~/.cache/rice-cine (catálogos 6 h, fichas 1 día). Si no hay red se
 devuelve lo último que haya en caché.
@@ -527,6 +528,21 @@ def get_json_subs(type_, video_id, filename="", size=""):
     return [x for x in subs if x.get("lang") in ("spa", "spn", "es", "esp", "ea")]
 
 
+def cmd_dismiss(id_):
+    """Quitar de "seguir viendo" (como "Quitar" en Stremio: vuelve el minuto a 0)."""
+    key = auth_key()
+    if not key:
+        return out({"error": "nologin"})
+    cur = api("datastoreGet", {"authKey": key, "collection": "libraryItem", "ids": [id_], "all": False})
+    if not cur:
+        return out({"ok": True})
+    item = cur[0]
+    item.setdefault("state", {})["timeOffset"] = 0
+    item["_mtime"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    api("datastorePut", {"authKey": key, "collection": "libraryItem", "changes": [item]})
+    out({"ok": True})
+
+
 def cmd_progress(type_, id_, video_id, offset, duration, finished="0"):
     key = auth_key()
     if not key:
@@ -571,7 +587,7 @@ def main():
             raise SystemExit(__doc__)
         {"library": cmd_library, "catalog": cmd_catalog, "catalogs": cmd_catalogs, "search": cmd_search,
          "meta": cmd_meta, "mylist": cmd_mylist,
-         "streams": cmd_streams, "subs": cmd_subs, "progress": cmd_progress,
+         "streams": cmd_streams, "subs": cmd_subs, "progress": cmd_progress, "dismiss": cmd_dismiss,
          "login": cmd_login, "logout": cmd_logout, "whoami": cmd_whoami}[a[0]](*a[1:])
     except KeyError:
         out({"error": "comando desconocido"})

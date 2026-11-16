@@ -64,7 +64,7 @@ Item {
             }
             Text {
                 anchors { right: parent.right; rightMargin: 26; verticalCenter: parent.verticalCenter }
-                text: rv.cine.rvStars === 0 ? "◀ ▶ ESTRELLAS" : (rv.cine.rvStars / 2).toString().replace(".", ",") + " / 5"
+                text: rv.cine.rvStars === 0 ? (rv.cine.padMode ? "◀ ▶ ESTRELLAS" : "") : (rv.cine.rvStars / 2).toString().replace(".", ",") + " / 5"
                 font.family: rv.cine.mono; font.pixelSize: 20
                 color: rv.th.dim
             }
@@ -119,6 +119,7 @@ Item {
                     onCursorRectangleChanged: if (cursorRectangle.y + cursorRectangle.height > flick.contentY + flick.height) flick.contentY = cursorRectangle.y + cursorRectangle.height - flick.height
                     // Esc o Ctrl+Enter: terminar de escribir (Enter solo = renglón nuevo)
                     Keys.onPressed: (e) => {
+                        rv.cine.usingKb();
                         if (e.key === Qt.Key_Escape || ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter) && (e.modifiers & Qt.ControlModifier))) {
                             rv.cine.endEditing(); e.accepted = true;
                         }
@@ -128,7 +129,7 @@ Item {
             Text {
                 anchors { left: parent.left; top: parent.top; margins: 20 }
                 visible: edit.text === "" && !edit.activeFocus
-                text: "Escribí tu reseña (opcional)…   A para escribir · Esc para terminar"
+                text: "Escribí tu reseña (opcional)…"
                 font.family: rv.cine.sans; font.pixelSize: 20
                 color: rv.th.dim
             }
@@ -137,6 +138,30 @@ Item {
                 visible: !edit.activeFocus
                 cursorShape: Qt.IBeamCursor
                 onClicked: { rv.cine.rvRow = 2; rv.cine.rvEditing = true; edit.forceActiveFocus(); }
+            }
+        }
+
+        // teclado en pantalla para escribir con el control
+        Grid {
+            visible: rv.cine.rvPadKeys
+            columns: rv.cine.keyCols
+            spacing: 6
+            Repeater {
+                model: rv.cine.keyboard
+                Rectangle {
+                    required property string modelData
+                    required property int index
+                    readonly property bool on: rv.cine.rvKeyIndex === index
+                    width: 62; height: 48; radius: 8
+                    color: on ? rv.th.hi : Qt.rgba(1, 1, 1, 0.06)
+                    border.color: on ? rv.th.hi : Qt.rgba(1, 1, 1, 0.1); border.width: 1
+                    Text {
+                        anchors.centerIn: parent
+                        text: parent.modelData === "ESPACIO" ? "␣" : parent.modelData === "BORRAR" ? "✕" : parent.modelData
+                        font.family: rv.cine.sans; font.pixelSize: 20; font.weight: Font.Bold
+                        color: parent.on ? rv.th.bg : "white"
+                    }
+                }
             }
         }
 
@@ -179,7 +204,8 @@ Item {
             color: rv.cine.rvState === "error" ? rv.th.warn : rv.th.fg
         }
         Text {
-            text: "▲ ▼ MOVER   ◀ ▶ ESTRELLAS   A ELEGIR   B AHORA NO"
+            visible: rv.cine.padMode
+            text: rv.cine.rvPadKeys ? "A ESCRIBIR   X BORRAR   Y ESPACIO   B LISTO" : "▲ ▼ MOVER   ◀ ▶ ESTRELLAS   A ELEGIR   B AHORA NO"
             font.family: rv.cine.mono; font.pixelSize: 14
             color: rv.th.line
         }

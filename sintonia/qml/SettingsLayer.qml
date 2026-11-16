@@ -716,6 +716,7 @@ Item {
         }
         Text {
             x: 110; y: parent.height - 70
+            visible: st.cine.padMode
             text: st.welcome ? "▲▼ ELEGIR   A CONECTAR   B EMPEZAR"
                  : st.col === "cats" ? "A ENTRAR   ▲▼ SECCIÓN   B CERRAR" : "▲▼ ELEGIR   ◀▶ CAMBIAR   A ACTIVAR   B VOLVER   LB RB SECCIÓN"
             font.family: st.mono; font.pixelSize: 15; font.letterSpacing: 2

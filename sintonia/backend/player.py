@@ -780,7 +780,7 @@ def _send_progress(rec):
 
 
 def save_progress(job, pos, dur, start, finished):
-    if test_mode() or job.get("type") == "archivo":
+    if test_mode() or job.get("type") == "archivo" or job.get("trailer"):   # los tráileres no van a "seguir viendo"
         return
     # menos de un minuto visto: no pisar dónde habías quedado (arranque en falso)
     if dur <= 0 or (not finished and pos - start < 60):

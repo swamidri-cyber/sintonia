@@ -21,7 +21,7 @@ Item {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton
-            onClicked: (m) => { if (m.button === Qt.RightButton) pl.cine.button("b"); }
+            onClicked: (m) => { if (m.button === Qt.RightButton) pl.cine.mouseBack(); }
         }
 
         Column {
@@ -114,6 +114,7 @@ Item {
             }
             Item { width: 1; height: 10 }
             Text {
+                visible: pl.cine.padMode
                 text: "A ELEGIR   B VOLVER"
                 font.family: pl.cine.mono; font.pixelSize: 14
                 color: pl.th.line
@@ -173,6 +174,7 @@ Item {
             }
             Item { width: 1; height: 20 }
             Text {
+                visible: pl.cine.padMode
                 text: "B CANCELAR"
                 font.family: pl.cine.mono; font.pixelSize: 14
                 color: Qt.rgba(1, 1, 1, 0.4)
@@ -334,7 +336,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 260; height: 26
                     readonly property real frac: pl.cine.pst.dur > 0 ? Math.min(1, pl.cine.pst.pos / pl.cine.pst.dur) : 0
-                    readonly property bool focused: pl.cine.ctrlFocus === 0 && pl.cine.trackMenu === ""
+                    readonly property bool focused: pl.cine.padMode && pl.cine.ctrlFocus === 0 && pl.cine.trackMenu === ""
                     Rectangle {
                         anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                         height: bar.focused ? 8 : 5; radius: height / 2
@@ -371,10 +373,10 @@ Item {
                     Rectangle {
                         required property var modelData
                         required property int index
-                        readonly property bool on: pl.cine.ctrlFocus === 1 && index === pl.cine.ctrlIndex
-                        width: bt.implicitWidth + 44; height: 56; radius: 28
-                        color: on ? pl.th.hi : Qt.rgba(1, 1, 1, 0.08)
-                        border.color: on ? pl.th.hi : Qt.rgba(1, 1, 1, 0.25)
+                        readonly property bool on: pl.cine.padMode ? pl.cine.ctrlFocus === 1 && index === pl.cine.ctrlIndex : cbMa.containsMouse
+                        width: pl.cine.padMode ? bt.implicitWidth + 44 : 52; height: pl.cine.padMode ? 56 : 52; radius: height / 2
+                        color: on ? pl.th.hi : pl.cine.padMode ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+                        border.color: on ? pl.th.hi : pl.cine.padMode ? Qt.rgba(1, 1, 1, 0.25) : "transparent"
                         border.width: 2
                         Row {   // ícono aparte, con la fuente de íconos y ancho fijo
                             id: bt
@@ -388,6 +390,7 @@ Item {
                                 color: parent.parent.on ? pl.th.bg : "white"
                             }
                             Text {
+                                visible: pl.cine.padMode
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: parent.parent.modelData.label
                                 font.family: pl.cine.sans; font.pixelSize: 18; font.weight: Font.Bold
@@ -395,6 +398,7 @@ Item {
                             }
                         }
                         MouseArea {
+                            id: cbMa
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -447,56 +451,49 @@ Item {
         }
     }
 
-    // Sincronizar subtítulos a mano
+    // Sincronizar subtítulos a mano: barra fina arriba, sin tapar la película
     Rectangle {
         visible: pl.cine.playStep === "on" && pl.cine.trackMenu === "sync"
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 220 }
-        width: 760; height: 230; radius: 16
-        color: Qt.rgba(0, 0, 0, 0.9)
-        border.color: pl.th.hi; border.width: 2
-        Column {
+        anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 70 }
+        width: syncRow.width + 48; height: 52; radius: 26
+        color: Qt.rgba(0, 0, 0, 0.6)
+        border.color: Qt.rgba(1, 1, 1, 0.15); border.width: 1
+        Row {
+            id: syncRow
             anchors.centerIn: parent
-            spacing: 12
+            spacing: 22
             Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "SINCRONIZAR SUBTÍTULOS"
-                font.family: pl.cine.mono; font.pixelSize: 16; font.letterSpacing: 3
+                anchors.verticalCenter: parent.verticalCenter
+                text: "SUBS"
+                font.family: pl.cine.mono; font.pixelSize: 14; font.letterSpacing: 3
                 color: pl.th.dim
             }
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 36
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "◀ ANTES"
-                    font.family: pl.cine.mono; font.pixelSize: 20
-                    color: "white"
-                    MouseArea { anchors.fill: parent; anchors.margins: -10; cursorShape: Qt.PointingHandCursor; onClicked: pl.cine.nudgeSubs(-0.1) }
-                }
-                Text {
-                    text: pl.cine.fmtDelay(pl.cine.pst.subDelay)
-                    font.family: pl.cine.mono; font.pixelSize: 56
-                    color: pl.th.hi
-                }
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "DESPUÉS ▶"
-                    font.family: pl.cine.mono; font.pixelSize: 20
-                    color: "white"
-                    MouseArea { anchors.fill: parent; anchors.margins: -10; cursorShape: Qt.PointingHandCursor; onClicked: pl.cine.nudgeSubs(0.1) }
-                }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "◀ ANTES"
+                font.family: pl.cine.mono; font.pixelSize: 16
+                color: "white"
+                MouseArea { anchors.fill: parent; anchors.margins: -14; cursorShape: Qt.PointingHandCursor; onClicked: pl.cine.nudgeSubs(-0.1) }
             }
             Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "◀ ▶ 0,1 s    ▲ ▼ 0,5 s    X AUTOMÁTICO    A LISTO"
-                font.family: pl.cine.mono; font.pixelSize: 14
-                color: pl.th.line
+                anchors.verticalCenter: parent.verticalCenter
+                text: pl.cine.fmtDelay(pl.cine.pst.subDelay)
+                font.family: pl.cine.mono; font.pixelSize: 26
+                color: pl.th.hi
             }
             Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "Si el texto aparece antes que la voz: DESPUÉS. Si aparece tarde: ANTES."
-                font.family: pl.cine.sans; font.pixelSize: 15
-                color: Qt.rgba(1, 1, 1, 0.6)
+                anchors.verticalCenter: parent.verticalCenter
+                text: "DESPUÉS ▶"
+                font.family: pl.cine.mono; font.pixelSize: 16
+                color: "white"
+                MouseArea { anchors.fill: parent; anchors.margins: -14; cursorShape: Qt.PointingHandCursor; onClicked: pl.cine.nudgeSubs(0.1) }
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: pl.cine.padMode
+                text: "▲▼ 0,5 s · X AUTO · A LISTO"
+                font.family: pl.cine.mono; font.pixelSize: 12
+                color: Qt.rgba(1, 1, 1, 0.45)
             }
         }
     }
@@ -581,7 +578,7 @@ Item {
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                visible: volBox.panel
+                visible: volBox.panel && pl.cine.padMode
                 text: "◀ ▶ 5 %    ▲ ▼ 25 %    A LISTO"
                 font.family: pl.cine.mono; font.pixelSize: 14
                 color: pl.th.line
@@ -644,7 +641,7 @@ Item {
         cursorShape: pl.cine.ctrlVisible ? Qt.ArrowCursor : Qt.BlankCursor
         onPositionChanged: pl.cine.showCtrl()
         onClicked: (m) => {
-            if (m.button === Qt.RightButton) { pl.cine.button("b"); return; }
+            if (m.button === Qt.RightButton) { pl.cine.mouseBack(); return; }
             pl.cine.playerCmd("pause"); pl.cine.showCtrl();
         }
         onWheel: (w) => pl.cine.playerCmd("volume " + (w.angleDelta.y > 0 ? 5 : -5))
@@ -672,6 +669,7 @@ Item {
                 color: pl.th.hi
             }
             Text {
+                visible: pl.cine.padMode
                 text: "A VER AHORA   B CANCELAR"
                 font.family: pl.cine.mono; font.pixelSize: 14
                 color: pl.th.line

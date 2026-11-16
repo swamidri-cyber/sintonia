@@ -142,10 +142,47 @@ Item {
                 }
                 root.loginError = "";
                 root.library = { "continue": d["continue"], again: d.again, list: d.list };
+                // parecidas listas de antemano para Seguir viendo y Mi lista (en segundo plano, de a una)
+                const warm = d["continue"].concat(d.list).filter(x => (x.id ?? "").startsWith("tt")).map(x => (x.type === "series" ? "series" : "movie") + ":" + x.id);
+                if (warm.length) Quickshell.execDetached([root.cfg + "/about.py", "warm"].concat(warm));
                 // recién abierto y sin tocar nada: arrancar en la primera fila
                 if (!root.touched) { root.rowIndex = 0; root.focusRowId = root.rows[0]?.id ?? ""; }
             }
         }
+    }
+
+    // ── Foto de lo último que se vio (arranque al instante) ────────────────
+    //  Al abrir se muestra lo de la última vez y, cuando Stremio termina de
+    //  sincronizar, se reemplaza solo. Lo cargado de la foto queda "stale".
+    property bool snapLoaded: false
+    FileView {
+        id: snapFile
+        path: (Quickshell.env("XDG_CACHE_HOME") || root.home + "/.cache") + "/rice-cine/ui-snapshot.json"
+        printErrors: false
+        onLoaded: {
+            if (root.snapLoaded) return;
+            root.snapLoaded = true;
+            try {
+                const d = JSON.parse(text());
+                if (d.library && !root.library["continue"].length && !root.library.list.length) root.library = d.library;
+                const c = Object.assign({}, root.srcCache);
+                for (const k in (d.src ?? {})) if (!c[k]) c[k] = { items: d.src[k], done: false, stale: true };
+                root.srcCache = c;
+                if (d.ytHome && !root.ytHome) root.ytHome = Object.assign({ stale: true }, d.ytHome);
+                root.ensureSources();
+            } catch (e) {}
+        }
+        onLoadFailed: root.snapLoaded = true
+    }
+    Timer { id: snapSave; interval: 4000; onTriggered: root.saveSnapshot() }
+    onLibraryChanged: if (snapLoaded) snapSave.restart()
+    onSrcCacheChanged: if (snapLoaded) snapSave.restart()
+    function saveSnapshot() {
+        const src = {};
+        for (const k in srcCache) if (srcCache[k].items?.length) src[k] = srcCache[k].items.slice(0, 120);
+        const yh = ytHome && !ytHome.stale && (ytHome.shelves?.length || ytHome.forYou?.length) ? ytHome : null;
+        Quickshell.execDetached(["mkdir", "-p", (Quickshell.env("XDG_CACHE_HOME") || home + "/.cache") + "/rice-cine"]);
+        snapFile.setText(JSON.stringify({ library: library, src: src, ytHome: yh }));
     }
 
     // ── Catálogos ───────────────────────────────────────────────────────────
@@ -160,7 +197,11 @@ Item {
             onStreamFinished: {
                 let d = null; try { d = JSON.parse(text); } catch (e) {}
                 const key = srcProc.key;
-                const old = root.srcCache[key] ?? { items: [], done: false };
+                let old = root.srcCache[key] ?? { items: [], done: false };
+                if (old.stale) {
+                    if (!d || d.error || !(d.metas ?? []).length) return;     // sin conexión: queda la foto
+                    old = { items: [], done: false };
+                }
                 const ids = new Set(old.items.map(x => x.id));
                 const fresh = (d?.metas ?? []).filter(x => !ids.has(x.id));
                 const c = Object.assign({}, root.srcCache);      // objeto nuevo: si no, QML no avisa
@@ -178,7 +219,7 @@ Item {
     function keyOf(source, type, genre) { return source + "|" + type + "|" + (genre || ""); }
     function requestSrc(key, more) {
         const e = srcCache[key];
-        if (e && (e.done || !more)) return;
+        if (e && !e.stale && (e.done || !more)) return;
         if ((srcProc.running && srcProc.key === key) || srcQueue.includes(key)) return;
         srcQueue = srcQueue.concat([key]);
         pumpSrc();
@@ -187,7 +228,8 @@ Item {
         if (srcProc.running || srcQueue.length === 0) return;
         const key = srcQueue[0];
         srcQueue = srcQueue.slice(1);
-        const e = srcCache[key];
+        let e = srcCache[key];
+        if (e?.stale) e = null;                      // de la foto: pedir de cero (lo viejo se ve mientras)
         if (e?.done) { pumpSrc(); return; }
         const parts = key.split("|");
         srcProc.key = key;
@@ -234,12 +276,12 @@ Item {
         id: ytHomeProc
         command: [root.cfg + "/youtube.py", "home"]
         stdout: StdioCollector {
-            onStreamFinished: { let d = null; try { d = JSON.parse(text); } catch (e) {} root.ytHome = d && !d.error ? d : { forYou: [], shelves: [] }; }
+            onStreamFinished: { let d = null; try { d = JSON.parse(text); } catch (e) {} if ((!d || d.error) && root.ytHome?.stale) return; root.ytHome = d && !d.error ? d : { forYou: [], shelves: [] }; }
         }
     }
     function ensureSources() {
         if (platform === "youtube") {
-            if (tab === "home") { if (!ytHome && !ytHomeProc.running) ytHomeProc.running = true; requestSrc("youtube|continue|"); }
+            if (tab === "home") { if ((!ytHome || ytHome.stale) && !ytHomeProc.running) ytHomeProc.running = true; requestSrc("youtube|continue|"); }
             if (tab === "subs") { requestSrc("youtube|feed|subs"); requestSrc("youtube|subsrelated|"); }
             if (tab === "you") for (const f of ["history", "later", "liked"]) requestSrc("youtube|feed|" + f);
             return;
@@ -252,7 +294,7 @@ Item {
         } else if (!plat.external) {
             keys = [keyOf(platform, "movie", ""), keyOf(platform, "series", "")];
         }
-        batchFetch(keys.filter(k => !srcCache[k]));
+        batchFetch(keys.filter(k => !srcCache[k] || srcCache[k].stale));
     }
     // Los catálogos que faltan, en un pedido (stremio.py catalogs, en paralelo
     // adentro). Cada pedido es un proceso propio: cambiar de canal no espera a
@@ -280,6 +322,7 @@ Item {
                     for (const k of bp.keys) {
                         const items = d?.[k] ?? [];
                         const src = k.split("|")[0];
+                        if (!items.length && c[k]?.stale) continue;        // sin conexión: queda la foto
                         // las de Stremio se pueden seguir paginando (srcProc); el resto vino completo
                         c[k] = { items: items, done: !items.length || !src.startsWith("stremio") };
                     }
@@ -481,11 +524,17 @@ Item {
     Process {
         id: actProc
         property string msg: ""
+        property bool yt: false
         stdout: StdioCollector {
             onStreamFinished: {
                 let d = null; try { d = JSON.parse(text); } catch (e) {}
                 root.toast = d?.ok ? actProc.msg : "No se pudo: " + (d?.error ?? "error");
                 if (!d?.ok) sfx.play("error");
+                if (actProc.yt) {
+                    actProc.yt = false;
+                    const c = Object.assign({}, root.srcCache); delete c["youtube|continue|"]; root.srcCache = c;
+                    root.requestSrc("youtube|continue|");
+                }
                 libProc.running = true;
             }
         }
@@ -500,9 +549,16 @@ Item {
         onExited: restartPad.start()
     }
     Timer { id: restartPad; interval: 3000; onTriggered: pad.running = true }
+    // ── Teclado o control: la interfaz se adapta a lo último que usaste ─────
+    //  (como los juegos: apretás un botón del control y todo cambia a "joystick")
+    property string inputMode: "kb"               // kb = teclado/mouse · pad = control
+    readonly property bool padMode: inputMode === "pad"
+    function usingPad() { if (inputMode !== "pad") inputMode = "pad"; }
+    function usingKb()  { if (inputMode !== "kb") inputMode = "kb"; }
     function padEvent(line) {
         const p = line.split(" ");
         if (p[0] === "pad") { padName = p[1] === "connected" ? p.slice(2).join(" ") : ""; return; }
+        if (p[0] === "nav" || p[0] === "press") usingPad();
         if (modal && !settingsLayer.open && !webLogin.open) return;   // (rice-settings manda)
         if (settingsLayer.open || webLogin.open) {
             if (p[0] === "nav") navigate(p[1]);
@@ -584,7 +640,10 @@ Item {
         function playFile(path: string, name: string): void { root.playFile(path, name) }
         function find(q: string): void { root.openSearch(); root.setQuery(q); }
         function key(k: string): void { ["up", "down", "left", "right"].includes(k) ? root.navigate(k) : root.button(k); }
-        function dbg(): string { return JSON.stringify({ rv: root.rvState, rvUser: root.rvUser, rvMsg: root.rvMsg, play: root.playStep, playIndex: root.playIndex, playMsg: root.playMsg, playErr: root.playErr, casting: root.casting, castName: root.castName, devices: root.castDevices.length, phase: root.phase, tab: root.tab, platform: root.platform, rows: root.rows.map(r => r.id + ":" + r.items.length), row: root.rowIndex, col: root.col, current: root.current?.name, loginError: root.loginError }); }
+        function about(type: string, id: string): void { root.openAbout({ type: type, id: id, name: id }, "new") }
+        function aboutDbg(): string { return JSON.stringify({ open: root.aboutOpen, name: root.aboutInfo?.name, data: !!root.aboutData, desc: (root.aboutData?.description ?? "").slice(0, 40), sim: root.aboutSim?.length ?? null, stack: root.aboutStack.length, actions: root.aboutActions(root.aboutInfo).map(x => x.id), focus: root.aboutFocus + ":" + root.aboutIndex + "/" + root.aboutSimIndex + "/" + root.aboutPplIndex, person: root.personView ? { name: root.personData?.name, roles: root.personRoles.map(r => r.label + ":" + r.items.length), row: root.personRow, col: root.personCol, msg: root.personMsg } : null, people: root.aboutPeople.map(x => x.name + "@" + x.line + "." + x.col).join("|"), sheet: root.actions(root.aboutInfo).map(x => x.id) }) }
+        function input(m: string): void { root.inputMode = m }
+        function dbg(): string { return JSON.stringify({ input: root.inputMode, sFocus: root.sFocus, rvEditing: root.rvEditing, rvKey: root.rvKeyIndex, rv: root.rvState, rvUser: root.rvUser, rvMsg: root.rvMsg, play: root.playStep, playIndex: root.playIndex, playMsg: root.playMsg, playErr: root.playErr, casting: root.casting, castName: root.castName, devices: root.castDevices.length, phase: root.phase, tab: root.tab, platform: root.platform, rows: root.rows.map(r => r.id + ":" + r.items.length), row: root.rowIndex, col: root.col, current: root.current?.name, loginError: root.loginError }); }
     }
     function toggle() {
         if (ytActive && !open) { returnFromYouTube(false); return; }
@@ -593,9 +652,12 @@ Item {
     }
     function appear(viaConsole) {
         if (open) return;
+        const keep = recentlyClosed();
         if ((cs.intro ?? "full") === "quick" && !viaConsole) {
-            if ((cs.startChannel ?? "stremio") !== "last") platform = "stremio";
-            tab = "home"; rowIndex = 0; focusRowId = rows[0]?.id ?? "";
+            if (!keep) {
+                if ((cs.startChannel ?? "stremio") !== "last") platform = "stremio";
+                tab = "home"; rowIndex = 0; focusRowId = rows[0]?.id ?? "";
+            }
             appearQuick(false);
             return;
         }
@@ -603,12 +665,14 @@ Item {
         libProc.running = true;
         Quickshell.execDetached(["systemctl", "--user", "start", "--no-block", "rice-cine-lbsync.service"]);   // watchlist de Letterboxd → Mi lista
         if (!castDisc.running) castDisc.running = true;
-        sheetOpen = false; pickerOpen = false; epOpen = false; toast = "";
-        searchActive = false; query = ""; searchItems = []; searchLayer.setField("");
+        toast = ""; pickerOpen = false;
         mouseMode = false; lastMouse = Qt.point(-1, -1);
-        touched = false;
-        if ((cs.startChannel ?? "stremio") !== "last") platform = "stremio";   // arranca en Stremio (o el último, según CONFIGURACIÓN)
-        tab = "home"; rowIndex = 0; focusRowId = rows[0]?.id ?? "";
+        if (keep) restorePlace();
+        else {
+            resetPlace();
+            if ((cs.startChannel ?? "stremio") !== "last") platform = "stremio";   // arranca en Stremio (o el último, según CONFIGURACIÓN)
+            tab = "home"; rowIndex = 0; focusRowId = rows[0]?.id ?? "";
+        }
         ensureSources();
         open = true;
         writeState(true);
@@ -618,6 +682,19 @@ Item {
         Quickshell.execDetached(["hyprctl", "dispatch", "riceCursorHide(true)"]);
         shown = true;
         offFallback.restart();
+    }
+    // Volver al mismo lugar si se cerró hace menos de 3 h (si no, arranca de cero)
+    property real closedAt: 0
+    function recentlyClosed() { return closedAt > 0 && Date.now() - closedAt < 3 * 3600 * 1000; }
+    function resetPlace() {
+        sheetOpen = false; epOpen = false;
+        aboutOpen = false; aboutItem = null; aboutStack = [];
+        searchActive = false; query = ""; searchItems = []; searchLayer.setField("");
+        touched = false;
+    }
+    function restorePlace() {
+        if (searchActive) Qt.callLater(() => { searchLayer.setField(query); if (sFocus === "keys") searchLayer.focusField(); });
+        else Qt.callLater(() => stage.forceActiveFocus());
     }
     function exitToDesktop() {
         fromConsole = false;
@@ -630,7 +707,7 @@ Item {
     }
     function hide() {
         if (!open) return;
-        if (searchActive) closeSearch();
+        closedAt = Date.now();
         if (playStep === "on") detachPlay();
         else if (playStep !== "") stopPlay();
         writeClean("");
@@ -663,9 +740,12 @@ Item {
     property bool mouseMode: false
     property point lastMouse: Qt.point(-1, -1)
     function mouseMoved(p) {
-        if (playStep === "on") showCtrl();
         if (lastMouse.x < 0) { lastMouse = p; return; }
-        if (Math.abs(p.x - lastMouse.x) + Math.abs(p.y - lastMouse.y) > 2) { lastMouse = p; mouseMode = true; }
+        // solo cuenta si el puntero se movió de verdad (no avisos sueltos de Qt)
+        if (Math.abs(p.x - lastMouse.x) + Math.abs(p.y - lastMouse.y) > 2) {
+            lastMouse = p; mouseMode = true; usingKb();
+            if (playStep === "on") showCtrl();
+        }
     }
     // Hover de tarjetas/listas: cuenta SOLO si el puntero se movió de verdad en la
     // pantalla. Si la vista se desplaza bajo un mouse quieto, Qt manda eventos de
@@ -704,9 +784,9 @@ Item {
         if (settingsLayer.open) { settingsLayer.navigate(dir); return; }
         if (phase !== "ui" || !open) return;
         mouseMode = false; touched = true;
-        const before = [rowIndex, col, sheetIndex, pickerIndex, epIndex, epSeason, sheetOpen, playIndex, ctrlIndex, ctrlFocus, trackIndex].join();
+        const before = [rowIndex, col, sheetIndex, pickerIndex, epIndex, epSeason, sheetOpen, playIndex, ctrlIndex, ctrlFocus, trackIndex, aboutFocus, aboutIndex, aboutSimIndex, aboutPplIndex, personRow, personCol].join();
         navigateRaw(dir);
-        if ([rowIndex, col, sheetIndex, pickerIndex, epIndex, epSeason, sheetOpen, playIndex, ctrlIndex, ctrlFocus, trackIndex].join() !== before && playStep !== "on") sfx.play("nav");
+        if ([rowIndex, col, sheetIndex, pickerIndex, epIndex, epSeason, sheetOpen, playIndex, ctrlIndex, ctrlFocus, trackIndex, aboutFocus, aboutIndex, aboutSimIndex, aboutPplIndex, personRow, personCol].join() !== before && playStep !== "on") sfx.play("nav");
     }
     function navigateRaw(dir) {
         if (review) { reviewNav(dir); return; }
@@ -723,6 +803,7 @@ Item {
             if (dir === "right") changeSeason(1);
             return;
         }
+        if (aboutOpen) { aboutNav(dir); return; }
         if (sheetOpen) {
             const n = actions(info).length;
             if (dir === "left")  sheetIndex = Math.max(0, sheetIndex - 1);
@@ -739,6 +820,13 @@ Item {
         if (dir === "down")  { if (rowIndex < rows.length - 1) { rowIndex++; focusRowId = rows[rowIndex].id; } else bump(dir); }
         // cerca del final de la fila: traer más
         if (curRow?.moreKey && col > curRow.items.length - 6) requestSrc(curRow.moreKey, true);
+    }
+    // Clic derecho = volver atrás, pero NUNCA saca del cine ni corta la película
+    function mouseBack() {
+        if (phase !== "ui" || !open) return;
+        if (playStep === "on" && !review && !nextEp && trackMenu === "" && ctrlFocus !== 1) return;
+        if (playStep === "" && !review && !nextEp && !pickerOpen && !epOpen && !sheetOpen && !searchActive && !aboutOpen) return;
+        button("b");
     }
     function button(b) {
         if (webLogin.open) { if (b === "b" || b === "guide") webLogin.cerrar(); return; }
@@ -773,6 +861,7 @@ Item {
             if (b === "rb") changeSeason(1);
             return;
         }
+        if (aboutOpen) { aboutButton(b); return; }
         if (sheetOpen) {
             if (b === "a") doAction(info, actions(info)[sheetIndex]?.id);
             if (b === "b") { sheetOpen = false; if (searchActive) searchLayer.focusField(); }
@@ -874,6 +963,15 @@ Item {
     }
     function searchNav(dir) {
         const n = searchResults.length, cols = searchLayer.resCols;
+        if (!padMode) {                            // teclado: el campo arriba, los resultados abajo
+            if (sFocus === "keys") { if (dir === "down" && n > 0) { sFocus = "results"; resIndex = 0; } else bump(dir); return; }
+            const c = resIndex % cols;
+            if (dir === "left")  { if (c > 0) resIndex--; else bump(dir); }
+            if (dir === "right") { if (c < cols - 1 && resIndex < n - 1) resIndex++; else bump(dir); }
+            if (dir === "up")    { if (resIndex >= cols) resIndex -= cols; else sFocus = "keys"; }
+            if (dir === "down")  { if (resIndex + cols < n) resIndex += cols; else if (Math.floor(resIndex / cols) < Math.floor((n - 1) / cols)) resIndex = n - 1; else bump(dir); }
+            return;
+        }
         if (sFocus === "keys") {
             const nk = keyboard.length, c = keyIndex % keyCols;
             if (dir === "left")  { if (c > 0) keyIndex--; else bump(dir); }
@@ -1045,10 +1143,9 @@ Item {
         fromConsole = false;
         libProc.running = true;
         Quickshell.execDetached(["systemctl", "--user", "start", "--no-block", "rice-cine-lbsync.service"]);   // watchlist de Letterboxd → Mi lista
-        sheetOpen = false; pickerOpen = false; epOpen = false; toast = "";
-        searchActive = false; query = ""; searchItems = []; searchLayer.setField("");
+        toast = ""; pickerOpen = false;
         mouseMode = false; lastMouse = Qt.point(-1, -1);
-        touched = false;
+        if (recentlyClosed()) restorePlace(); else resetPlace();
         ensureSources();
         open = true; shown = true;
         writeState(true);
@@ -1069,8 +1166,23 @@ Item {
             if ((it.offset ?? 0) > 0) a.push({ id: "resume", glyph: "\u{f040a}", label: "CONTINUAR", note: "desde " + fmtTime(it.offset) });
             a.push({ id: "play", glyph: (it.offset ?? 0) > 0 ? "\u{f0459}" : "\u{f040a}", label: (it.offset ?? 0) > 0 ? "DESDE EL PRINCIPIO" : "REPRODUCIR" });
             if (castDevices.length) a.push({ id: "tv", glyph: "\u{f0118}", label: "EN LA TELE", note: tvNote() });
+            if ((it.offset ?? 0) > 0) a.push({ id: "dismiss", glyph: "\u{f0156}", label: "QUITAR DE SEGUIR VIENDO" });
             return a;
         }
+        // reproducir solo desde la pestaña SOBRE LA PELÍCULA (AboutLayer.qml)
+        a.push({ id: "about", glyph: "\u{f040a}", label: "ABRIR", note: "sinopsis · tráiler · reproducir" });
+        if ((library["continue"] ?? []).some(x => x.id === it.id))
+            a.push({ id: "dismiss", glyph: "\u{f0156}", label: "QUITAR DE SEGUIR VIENDO" });
+        if (listIds.includes(it.id))
+            a.push({ id: "unlist", glyph: "\u{f0376}", label: "QUITAR DE MI LISTA" });
+        else
+            a.push({ id: "list", glyph: "\u{f0412}", label: "AGREGAR A MI LISTA" });
+        return a;
+    }
+    // botones de reproducir (los usa la pestaña SOBRE LA PELÍCULA)
+    function playActions(it) {
+        if (!it) return [];
+        const a = [];
         if (it.type === "series") {
             if (it.videoId && it.season > 0)
                 a.push({ id: "resume", glyph: "\u{f040a}", label: "CONTINUAR", note: "T" + it.season + " · E" + it.episode });
@@ -1083,15 +1195,203 @@ Item {
         // a la tele directo (si hay un Chromecast en la casa)
         if (castDevices.length && (it.type !== "series" || (it.videoId && it.season > 0)))
             a.splice(1, 0, { id: "tv", glyph: "\u{f0118}", label: "EN LA TELE", note: tvNote() });
-        if (listIds.includes(it.id))
-            a.push({ id: "unlist", glyph: "\u{f0376}", label: "QUITAR DE MI LISTA" });
-        else
-            a.push({ id: "list", glyph: "\u{f0412}", label: "AGREGAR A MI LISTA" });
         return a;
     }
+
+    // ── Pestaña SOBRE LA PELÍCULA ───────────────────────────────────────────
+    property bool   aboutOpen: false
+    property var    aboutItem: null
+    property var    aboutData: null              // about.py about (null = cargando)
+    property var    aboutSim: null               // about.py similar (null = buscando)
+    property var    aboutStack: []               // recomendaciones abiertas una encima de otra
+    property string aboutFocus: "act"            // act = botones · sim = parecidas · ppl = equipo/reparto · role = filas del perfil
+    property int    aboutIndex: 0
+    property int    aboutSimIndex: 0
+    property int    aboutPplIndex: 0
+    // perfil de una persona (aboutItem.type === "person")
+    property var    personData: null             // about.py person (null = cargando)
+    property int    personRow: 0
+    property var    personCols: ({})             // fila → película elegida (cada fila recuerda la suya)
+    property string personMsg: ""
+    readonly property bool personView: aboutItem?.type === "person"
+    readonly property var personRoles: (personData?.roles ?? []).filter(r => r.items?.length)
+    readonly property int personCol: personCols[personRow] ?? 0
+    function setPersonCol(c) { const m = Object.assign({}, personCols); m[personRow] = c; personCols = m; }
+    // Equipo y reparto de la película como lista navegable: [{ name, role, path, photo, line, col }]
+    function slugify(n) {
+        return (n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    }
+    readonly property var aboutPeople: {
+        const d = aboutData, r = [];
+        if (!d || personView) return r;
+        const map = d.people ?? {};
+        let line = 0;
+        const crewRows = [[aboutItem?.type === "series" ? "creator" : "director", d.director], ["writer", d.writer],
+                          ["cinematography", d.dop], ["editor", d.editing], ["composer", d.music]];
+        for (const [kind, names] of crewRows) {
+            if (!names?.length) continue;
+            names.slice(0, 3).forEach((n, i) => r.push({ name: n, kind: kind, path: map[n.toLowerCase()] ?? ("/" + kind + "/" + slugify(n) + "/"), photo: "", line: line, col: i }));
+            line++;
+        }
+        (d.castFull ?? []).slice(0, 6).forEach((c, i) => r.push({ name: c.name, kind: "actor", path: map[c.name.toLowerCase()] ?? ("/actor/" + slugify(c.name) + "/"),
+                                                                    photo: c.photo ?? "", line: line + Math.floor(i / 3), col: i % 3 }));
+        return r;
+    }
+    // dejar listos (en segundo plano) los perfiles más probables: dirección y reparto principal
+    function prefetchPeople() {
+        const P = aboutPeople;
+        const pick = P.filter(x => x.kind !== "actor").slice(0, 2).concat(P.filter(x => x.kind === "actor").slice(0, 3));
+        if (!pick.length) return;
+        Quickshell.execDetached([cfg + "/about.py", "prefetch"].concat(...pick.map(x => [x.name, x.path])));
+    }
+    function openPerson(x) {
+        if (!x) return;
+        openAbout({ type: "person", id: "person:" + x.path, name: x.name, path: x.path, photo: x.photo }, "push");
+    }
+    readonly property var aboutInfo: aboutItem ? Object.assign({}, aboutItem, metaCache[aboutItem.id] ?? {}, libProgress(aboutItem.id)) : null
+    function libProgress(id) {
+        const x = library["continue"].find(y => y.id === id) ?? library.again.find(y => y.id === id);
+        if (!x) return {};
+        return { offset: x.offset, duration: x.duration, progress: x.progress, videoId: x.videoId,
+                 season: x.season, episode: x.episode, watched: x.watched };
+    }
+    function aboutActions(it) {
+        const a = playActions(it);
+        if (aboutData?.trailer) a.push({ id: "trailer", glyph: "\u{f0fce}", label: "TRÁILER" });
+        return a;
+    }
+    function openAbout(it, mode) {          // mode: new | push | back
+        if (!it || !it.id) return;
+        if (mode === "push" && aboutItem)
+            aboutStack = aboutStack.concat([Object.assign({}, aboutItem, { _st: { focus: aboutFocus, index: aboutIndex, sim: aboutSimIndex,
+                ppl: aboutPplIndex, row: personRow, cols: personCols, data: aboutData, simData: aboutSim, person: personData } })]);
+        if (mode === "new") aboutStack = [];
+        const st = mode === "back" ? it._st : null;
+        aboutItem = it; aboutData = st?.data ?? null; aboutSim = st?.simData ?? null; personData = st?.person ?? null;
+        aboutFocus = st?.focus ?? (it.type === "person" ? "role" : "act");
+        aboutIndex = st?.index ?? 0; aboutSimIndex = st?.sim ?? 0; aboutPplIndex = st?.ppl ?? 0;
+        personRow = st?.row ?? 0; personCols = st?.cols ?? ({}); personMsg = "";
+        sheetOpen = false; epOpen = false;
+        aboutOpen = true;
+        if (it.type === "person") {
+            if (!st?.person) aboutComp.createObject(root, { kind: "person", forId: it.id, args: ["person", it.name, it.path ?? ""] });
+            return;
+        }
+        fetchMeta(it);
+        if (st?.data && st?.simData) return;            // volviendo: ya estaba todo cargado
+        const t = it.type === "series" ? "series" : "movie";
+        aboutComp.createObject(root, { kind: "about", forId: it.id, args: ["about", t, it.id] });
+        aboutComp.createObject(root, { kind: "similar", forId: it.id, args: ["similar", t, it.id] });
+    }
+    function closeAbout() {
+        if (aboutStack.length) {
+            const prev = aboutStack[aboutStack.length - 1];
+            aboutStack = aboutStack.slice(0, -1);
+            openAbout(prev, "back");
+            return;
+        }
+        aboutOpen = false; aboutItem = null;
+    }
+    Component {
+        id: aboutComp
+        Process {
+            id: ap
+            property string kind: ""
+            property string forId: ""
+            property var args: []
+            property var film: null
+            command: [root.cfg + "/about.py"].concat(args)
+            running: true
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    let d = null; try { d = JSON.parse(text); } catch (e) {}
+                    if (root.aboutItem?.id !== ap.forId) return;
+                    if (ap.kind === "about") { root.aboutData = d && !d.error ? d : {}; Qt.callLater(root.prefetchPeople); }
+                    else if (ap.kind === "person") root.personData = d && !d.error ? d : { roles: [], error: true };
+                    else if (ap.kind === "lbfilm") {
+                        root.personMsg = "";
+                        if (d?.id) root.openAbout(Object.assign({}, ap.film, { id: d.id, type: "movie" }), "push");
+                        else root.personMsg = "No encontré «" + (ap.film?.name ?? "") + "» en el catálogo.";
+                    }
+                    else root.aboutSim = d?.items ?? [];
+                }
+            }
+            onExited: ap.destroy(1000)
+        }
+    }
+    function aboutButton(b) {
+        if (b === "b") { sfx.play("back"); closeAbout(); return; }
+        if (b !== "a") return;
+        if (personView) {
+            const f = personRoles[personRow]?.items?.[personCol];
+            if (!f) return;
+            const film = { type: "movie", id: f.id, name: f.name, year: f.year, poster: f.poster ?? "" };
+            if (f.id) { openAbout(film, "push"); return; }
+            personMsg = "Buscando «" + f.name + "»…";
+            aboutComp.createObject(root, { kind: "lbfilm", forId: aboutItem.id, film: film, args: ["lbfilm", f.slug] });
+            return;
+        }
+        if (aboutFocus === "ppl") { openPerson(aboutPeople[aboutPplIndex]); return; }
+        if (aboutFocus === "sim") {
+            const x = (aboutSim ?? [])[aboutSimIndex];
+            if (x) openAbout(x, "push");
+            return;
+        }
+        const id = aboutActions(aboutInfo)[aboutIndex]?.id;
+        if (id === "trailer") playTrailer();
+        else doAction(aboutInfo, id);
+    }
+    function aboutNav(dir) {
+        if (personView) {
+            const rs = personRoles;
+            if (!rs.length) { bump(dir); return; }
+            const n = rs[personRow]?.items?.length ?? 0;
+            if (dir === "up")    { if (personRow > 0) personRow--; else bump(dir); }
+            if (dir === "down")  { if (personRow < rs.length - 1) personRow++; else bump(dir); }
+            if (dir === "left")  { if (personCol > 0) setPersonCol(personCol - 1); else bump(dir); }
+            if (dir === "right") { if (personCol < n - 1) setPersonCol(personCol + 1); else bump(dir); }
+            personMsg = "";
+            return;
+        }
+        if (aboutFocus === "ppl") {
+            const P = aboutPeople, cur = P[aboutPplIndex];
+            if (!cur) { aboutFocus = "act"; return; }
+            const lines = P.map(x => x.line), last = Math.max(...lines);
+            const goLine = (l) => {                    // la más cercana en columna de esa línea
+                const c = P.filter(x => x.line === l);
+                const best = c.reduce((a, x) => Math.abs(x.col - cur.col) < Math.abs(a.col - cur.col) ? x : a, c[0]);
+                aboutPplIndex = P.indexOf(best);
+            };
+            if (dir === "left")  { if (aboutPplIndex > 0 && P[aboutPplIndex - 1].line === cur.line) aboutPplIndex--; else aboutFocus = "act"; }
+            if (dir === "right") { if (aboutPplIndex < P.length - 1 && P[aboutPplIndex + 1].line === cur.line) aboutPplIndex++; else bump(dir); }
+            if (dir === "up")    { if (cur.line > 0) goLine(cur.line - 1); else bump(dir); }
+            if (dir === "down")  { if (cur.line < last) goLine(cur.line + 1); else if (aboutSim?.length) aboutFocus = "sim"; else bump(dir); }
+            return;
+        }
+        if (aboutFocus === "act") {
+            const n = aboutActions(aboutInfo).length;
+            if (dir === "left")  { if (aboutIndex > 0) aboutIndex--; else bump(dir); }
+            if (dir === "right") { if (aboutIndex < n - 1) aboutIndex++; else if (aboutPeople.length) { aboutFocus = "ppl"; aboutPplIndex = 0; } else bump(dir); }
+            if (dir === "down")  { if (aboutSim?.length) aboutFocus = "sim"; else bump(dir); }
+            if (dir === "up")    { if (aboutPeople.length) { aboutFocus = "ppl"; aboutPplIndex = 0; } else bump(dir); }
+        } else {
+            const n = aboutSim?.length ?? 0;
+            if (dir === "left")  { if (aboutSimIndex > 0) aboutSimIndex--; else bump(dir); }
+            if (dir === "right") { if (aboutSimIndex < n - 1) aboutSimIndex++; else bump(dir); }
+            if (dir === "up")    aboutFocus = "act";
+            if (dir === "down")  bump(dir);
+        }
+    }
+    function playTrailer() {
+        const t = aboutData?.trailer;
+        if (!t) return;
+        startPlay({ type: "video", id: "yt:" + t, name: "Tráiler · " + (aboutInfo?.name ?? ""), channel: "", trailer: true }, "yt:" + t, 0);
+    }
+
     function doAction(it, id) {
         if (!it || !id) return;
         switch (id) {
+        case "about":    openAbout(it, "new"); break;
         case "resume":   startPlay(it, it.type === "series" ? it.videoId : it.id, it.offset ?? 0); break;
         case "play":     startPlay(it, it.id, 0); break;
         case "episodes": openEpisodes(it); break;
@@ -1105,6 +1405,13 @@ Item {
             actProc.msg = (id === "list" ? "Agregada a Mi lista: " : "Quitada de Mi lista: ") + it.name;
             if (id === "list") setOrigin(it.id);
             actProc.command = [cfg + "/stremio.py", "mylist", id === "list" ? "add" : "remove", it.type, it.id, it.name];
+            actProc.running = true;
+            sheetOpen = false;
+            break;
+        case "dismiss":
+            actProc.msg = "Quitada de Seguir viendo: " + (it.name ?? it.title ?? "");
+            actProc.yt = it.type === "video";
+            actProc.command = actProc.yt ? [cfg + "/youtube.py", "dismiss", it.id] : [cfg + "/stremio.py", "dismiss", it.id];
             actProc.running = true;
             sheetOpen = false;
             break;
@@ -1290,7 +1597,7 @@ Item {
     }
 
     function startPlay(it, videoId, startMs) {
-        setOrigin(it.id);
+        if (!it.trailer) setOrigin(it.id);
         const v = (metaCache[it.id]?.videos ?? []).find(x => x.id === videoId);
         play = { item: it, videoId: videoId, start: startMs || 0,
                  seenBefore: library.again.some(x => x.id === it.id) || !!it.watched,
@@ -1350,6 +1657,7 @@ Item {
         trackMenu = ""; ctrlFocus = 0; ctrlIndex = 0; syncInfo = null; syncNote = "";
         runPlayer({
             type: "video", id: play.item.id, videoId: play.item.id, name: play.item.name, channel: play.item.channel ?? "",
+            trailer: !!play.item.trailer,
             start: (play.start || 0) / 1000, nosave: testMode });
     }
     function playFile(path, name) {
@@ -1544,7 +1852,17 @@ Item {
     function volMax() { return !casting ? 130 : play?.item.type === "video" ? 100 : 300; }
     property bool volFlash: false
     Timer { id: volFlashOff; interval: 1800; onTriggered: root.volFlash = false }
-    Timer { id: ctrlTimer; interval: 3500; onTriggered: if (!root.pst.pause && root.trackMenu === "") root.ctrlVisible = false }
+    // 2 s sin tocar nada → se va todo (también en pausa o con un menú abierto); solo SINCRONIZAR se queda
+    Timer {
+        id: ctrlTimer; interval: 2000
+        onTriggered: {
+            if (root.trackMenu === "sync") return;
+            if (root.trackMenu !== "") root.trackMenu = "";
+            root.ctrlFocus = 0;
+            root.ctrlVisible = false;
+        }
+    }
+    onTrackMenuChanged: if (playStep === "on") ctrlTimer.restart()
     function showCtrl() { ctrlVisible = true; ctrlTimer.restart(); }
     // los subtítulos suben para no quedar debajo de la barra
     onCtrlVisibleChanged: if (playStep === "on") playerCmd("submargin " + (ctrlVisible ? "controls" : "normal"))
@@ -1683,6 +2001,24 @@ Item {
             if (dir === "right") ctrlIndex = Math.min(n - 1, ctrlIndex + 1);
             if (dir === "up")    ctrlFocus = 0;
         }
+    }
+    // Viendo algo con el teclado: atajos directos, sin depender de qué botón está marcado
+    //  Espacio/K/Enter pausa · ←/→ 10 s (Shift: 1 min) · ↑/↓ volumen · S subtítulos · A audio · N siguiente
+    function playKey(e) {
+        if (playStep !== "on" || review || nextEp || trackMenu !== "") return false;
+        const k = e.key, shift = e.modifiers & Qt.ShiftModifier;
+        showCtrl();
+        if (k === Qt.Key_Space || k === Qt.Key_K || k === Qt.Key_Return || k === Qt.Key_Enter) playerCmd("pause");
+        else if (k === Qt.Key_Left)  playerCmd(shift ? "seek -60" : "seek -10");
+        else if (k === Qt.Key_Right) playerCmd(shift ? "seek 60" : "seek 10");
+        else if (k === Qt.Key_Up)    playerCmd("volume 5");
+        else if (k === Qt.Key_Down)  playerCmd("volume -5");
+        else if (k === Qt.Key_S && play?.item.type !== "video") ctrlAction("subs");
+        else if (k === Qt.Key_A && play?.item.type !== "video") ctrlAction("audio");
+        else if (k === Qt.Key_N && play?.item.type === "series") ctrlAction("next");
+        else if (k === Qt.Key_Escape || k === Qt.Key_Backspace) stopPlay();
+        else return false;
+        return true;
     }
     function playButton(b) {
         if (playStep === "lang") {
@@ -1903,7 +2239,17 @@ Item {
                           review.rewatch ? "1" : "0", rvSpoilers ? "1" : "0", reviewText.text];
         lbPost.running = true;
     }
+    property int rvKeyIndex: 0
+    readonly property bool rvPadKeys: rvEditing && padMode
     function reviewNav(dir) {
+        if (rvPadKeys) {
+            const nk = keyboard.length, c = rvKeyIndex % keyCols;
+            if (dir === "left")  { if (c > 0) rvKeyIndex--; else bump(dir); }
+            if (dir === "right") { if (c < keyCols - 1 && rvKeyIndex < nk - 1) rvKeyIndex++; else bump(dir); }
+            if (dir === "up")    { if (rvKeyIndex >= keyCols) rvKeyIndex -= keyCols; else bump(dir); }
+            if (dir === "down")  { if (rvKeyIndex + keyCols < nk) rvKeyIndex += keyCols; else bump(dir); }
+            return;
+        }
         if (rvConfirm) { if (dir === "left" || dir === "right") rvButton = 1 - rvButton; return; }
         if (dir === "up")   rvRow = Math.max(0, rvRow - 1);
         if (dir === "down") rvRow = Math.min(4, rvRow + 1);
@@ -1915,6 +2261,15 @@ Item {
         if (rvState === "posting") return;
         if (rvState === "checking" && rvRow === 4 && b === "a" && rvButton === 0) return;   // esperar a saber quién sos
         if (rvState === "done") { review = null; return; }
+        if (rvPadKeys) {
+            const t = reviewText;
+            if (b === "b") { endEditing(); return; }
+            if (b === "x" || (b === "a" && keyboard[rvKeyIndex] === "⌫")) { if (t.length) t.remove(t.length - 1, t.length); return; }
+            if (b === "a" && keyboard[rvKeyIndex] === "BORRAR") { t.text = ""; return; }
+            if (b === "y" || (b === "a" && keyboard[rvKeyIndex] === "ESPACIO")) { t.insert(t.length, " "); return; }
+            if (b === "a") { const ch = keyboard[rvKeyIndex]; t.insert(t.length, t.length === 0 || /[.!?]\s$/.test(t.text) ? ch : ch.toLowerCase()); }
+            return;
+        }
         if (rvConfirm) {
             if (b === "a") { if (rvButton === 0) postReview(); else rvConfirm = false; }
             if (b === "b") rvConfirm = false;
@@ -1924,7 +2279,7 @@ Item {
         if (b !== "a") return;
         switch (rvRow) {
         case 1: rvLiked = !rvLiked; break;
-        case 2: rvEditing = true; reviewText.forceActiveFocus(); break;
+        case 2: rvEditing = true; rvKeyIndex = 0; reviewText.forceActiveFocus(); reviewText.cursorPosition = reviewText.length; break;
         case 3: rvSpoilers = !rvSpoilers; break;
         case 4:
             if (rvButton === 1) { review = null; break; }
@@ -2101,6 +2456,8 @@ Item {
             HoverHandler { onPointChanged: root.mouseMoved(point.scenePosition) }
             Keys.onPressed: (e) => {
                 const k = e.key;
+                root.usingKb();
+                if (root.playKey(e)) { e.accepted = true; return; }
                 if (k === Qt.Key_Comma) { root.openSettings(); e.accepted = true; return; }
                 if (k === Qt.Key_Slash || k === Qt.Key_F) {   // F, Ctrl+F o / = buscar
                     root.openSearch(); e.accepted = true; return;
@@ -2419,16 +2776,15 @@ Item {
                                 theme: root.theme
                                 rowFocused: rowItem.focused
                                 selected: rowItem.focused && index === root.col && !root.epOpen && !root.pickerOpen
+                                hover: root.mouseMode && cardMa.containsMouse
                                 MouseArea {
+                                    id: cardMa
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                    onPositionChanged: (m) => { if (root.mouseMode && !root.sheetOpen && !root.pickerOpen && !root.epOpen && root.realMove(parent, m)) {
-                                        root.rowIndex = rowItem.index; root.focusRowId = rowItem.modelData.id;
-                                        root.setCol(rowItem.modelData.id, parent.index);
-                                    } }
+                                    // pasar el mouse por encima NO elige la tarjeta (solo el clic)
                                     onClicked: (m) => {
-                                        if (m.button === Qt.RightButton) { root.button("b"); return; }
+                                        if (m.button === Qt.RightButton) { root.mouseBack(); return; }
                                         root.rowIndex = rowItem.index; root.focusRowId = rowItem.modelData.id;
                                         root.setCol(rowItem.modelData.id, parent.index);
                                         root.openSheet();
@@ -2476,7 +2832,7 @@ Item {
                 // Ayuda de botones (abajo a la derecha, sobre una pastilla para leerse arriba de las portadas)
                 Rectangle {
                     anchors { fill: helpTxt; margins: -8; leftMargin: -14; rightMargin: -14 }
-                    visible: helpTxt.text !== "" && !root.sheetOpen
+                    visible: helpTxt.text !== "" && !root.sheetOpen && root.padMode
                     radius: height / 2
                     color: Qt.rgba(0, 0, 0, 0.72)
                     border.width: 1; border.color: root.theme.line
@@ -2484,19 +2840,21 @@ Item {
                 Text {
                     id: helpTxt
                     anchors { right: parent.right; bottom: parent.bottom; rightMargin: 104; bottomMargin: 26 }
-                    visible: !root.sheetOpen
+                    visible: !root.sheetOpen && root.padMode
                     text: root.pickerOpen ? "A SINTONIZAR   B VOLVER"
                         : root.epOpen ? "A REPRODUCIR   ◀ ▶ TEMPORADA   B VOLVER"
                         : root.sheetOpen ? "A ELEGIR   B VOLVER"
                         : root.searchActive ? ""
-                        : root.tab === "letterboxd" ? "A ELEGIR   B SALIR   LB/RB SECCIÓN   Y CANALES   X (o F) BUSCAR EN TU LISTA"
-                        : "A ELEGIR   B SALIR   LB/RB SECCIÓN   Y CANALES   X (o F) BUSCAR"
+                        : root.tab === "letterboxd" ? "A ELEGIR   B SALIR   LB/RB SECCIÓN   Y CANALES   X BUSCAR EN TU LISTA"
+                        : "A ELEGIR   B SALIR   LB/RB SECCIÓN   Y CANALES   X BUSCAR"
                     font.family: root.mono; font.pixelSize: 14; font.letterSpacing: 1
                     color: root.theme.dim
                 }
 
                 LbLayer { id: lbLayer; anchors.fill: parent; cine: root }
                 SearchLayer { id: searchLayer; anchors.fill: parent; cine: root }
+                AboutLayer { anchors.fill: parent; cine: root }
+                PersonLayer { anchors.fill: parent; cine: root }
 
                 // ── Menú de abajo (al elegir un título) ────────────────────
                 Rectangle {
@@ -2583,7 +2941,7 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        onClicked: (m) => { if (m.button === Qt.RightButton) root.button("b"); }
+                        onClicked: (m) => { if (m.button === Qt.RightButton) root.mouseBack(); }
                         onWheel: (w) => root.navigate(w.angleDelta.y > 0 ? "up" : "down")
                     }
                     EvaText {

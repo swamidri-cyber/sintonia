@@ -10,6 +10,7 @@ en el momento; no se guardan en ningún lado). Siempre imprime UN JSON.
   youtube.py meta <id>                         descripción, canal, fecha
   youtube.py continue                          lo que dejaste a medias (local)
   youtube.py progress <id> <s> <s total> <título> <canal>   guardar dónde quedaste
+  youtube.py dismiss <id>                         quitar de "seguir viendo"
 
 Cachés: ~/.cache/rice-cine (feeds 20 min, fichas 1 día). El progreso de
 YouTube queda en ~/.local/state/rice-cine/youtube.json (no va a la cuenta).
@@ -167,6 +168,14 @@ def cmd_continue():
         it["progress"] = round(v["pos"] / v["dur"], 4) if v.get("dur") else 0
         items.append(it)
     out({"metas": items[:30]})
+
+
+def cmd_dismiss(id_):
+    p = load_progress()
+    p.pop(id_.removeprefix("yt:"), None)
+    os.makedirs(STATE, exist_ok=True)
+    json.dump(p, open(PROGRESS, "w"))
+    out({"ok": True})
 
 
 def cmd_progress(id_, pos, dur, title="", channel=""):
@@ -385,7 +394,7 @@ def cmd_account():
 if __name__ == "__main__":
     a = sys.argv[1:]
     try:
-        {"home": cmd_home, "subsrelated": cmd_subsrelated, "feed": cmd_feed, "search": cmd_search, "meta": cmd_meta, "continue": cmd_continue,
+        {"home": cmd_home, "subsrelated": cmd_subsrelated, "feed": cmd_feed, "search": cmd_search, "meta": cmd_meta, "continue": cmd_continue, "dismiss": cmd_dismiss,
          "progress": cmd_progress, "account": cmd_account}[a[0]](*a[1:])
     except Exception as e:
         out({"error": str(e)[:200]})

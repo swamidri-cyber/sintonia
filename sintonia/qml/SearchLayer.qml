@@ -27,7 +27,7 @@ Item {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton
-            onClicked: (m) => { if (m.button === Qt.RightButton) sl.cine.button("b"); }
+            onClicked: (m) => { if (m.button === Qt.RightButton) sl.cine.mouseBack(); }
             onWheel: (w) => sl.cine.navigate(w.angleDelta.y > 0 ? "up" : "down")
         }
     }
@@ -36,9 +36,10 @@ Item {
     TextInput {
         id: field
         width: 1; height: 1; opacity: 0
-        onTextEdited: sl.cine.queryTyped(text)
+        onTextEdited: { sl.cine.usingKb(); sl.cine.queryTyped(text); }
         Keys.onPressed: (e) => {
             const k = e.key;
+            sl.cine.usingKb();
             if (k === Qt.Key_Left)       sl.cine.navigate("left");
             else if (k === Qt.Key_Right) sl.cine.navigate("right");
             else if (k === Qt.Key_Up)    sl.cine.navigate("up");
@@ -57,8 +58,8 @@ Item {
     // ── Izquierda: lo escrito + teclado en pantalla ───────────────────────
     Column {
         id: left
-        anchors { left: parent.left; leftMargin: 90; top: parent.top; topMargin: 130 }
-        width: 640
+        anchors { left: parent.left; leftMargin: 90; top: parent.top; topMargin: sl.cine.padMode ? 130 : 110 }
+        width: sl.cine.padMode ? 640 : parent.width - 180
         spacing: 26
 
         Text {
@@ -81,7 +82,8 @@ Item {
                 visible: sl.cine.query !== ""
                 x: Math.min(qtxt.contentWidth, parent.width) + 6
                 anchors.verticalCenter: parent.verticalCenter
-                width: 4; height: 54; color: sl.th.hi
+                width: 4; height: 54
+                color: sl.cine.padMode || sl.cine.sFocus === "keys" ? sl.th.hi : sl.th.line
                 SequentialAnimation on opacity {
                     loops: Animation.Infinite; running: sl.visible
                     NumberAnimation { to: 0; duration: 500 }
@@ -91,6 +93,7 @@ Item {
             Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: 2; color: sl.th.line }
         }
         Grid {
+            visible: sl.cine.padMode
             columns: sl.cine.keyCols
             spacing: 8
             Repeater {
@@ -118,7 +121,8 @@ Item {
             }
         }
         Text {
-            text: "A ESCRIBIR / ELEGIR    X BORRAR    Y ESPACIO    B CERRAR\nTambién podés escribir con el teclado."
+            visible: sl.cine.padMode
+            text: "A ESCRIBIR / ELEGIR    X BORRAR    Y ESPACIO    B CERRAR"
             font.family: sl.cine.mono; font.pixelSize: 14
             color: sl.th.dim
             lineHeight: 1.4
@@ -127,7 +131,9 @@ Item {
 
     // ── Derecha: resultados ────────────────────────────────────────────────
     Item {
-        anchors { left: left.right; leftMargin: 70; right: parent.right; rightMargin: 90; top: parent.top; topMargin: 130; bottom: parent.bottom; bottomMargin: 60 }
+        // con teclado: debajo de lo escrito, a todo el ancho; con control: a la derecha del teclado en pantalla
+        anchors { left: sl.cine.padMode ? left.right : parent.left; leftMargin: sl.cine.padMode ? 70 : 90; right: parent.right; rightMargin: 90
+                  top: sl.cine.padMode ? parent.top : left.bottom; topMargin: sl.cine.padMode ? 130 : 40; bottom: parent.bottom; bottomMargin: 60 }
 
         Text {
             id: resHead
@@ -170,6 +176,7 @@ Item {
                 required property var modelData
                 required property int index
                 readonly property bool on: sl.cine.sFocus === "results" && sl.cine.resIndex === index
+                readonly property bool hov: sl.cine.mouseMode && cellMa.containsMouse
                 width: resGrid.cellWidth; height: resGrid.cellHeight
 
                 // búsqueda reciente: una pastilla
@@ -196,7 +203,7 @@ Item {
                         anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 8 }
                         width: sl.wide ? 280 : 176; height: sl.wide ? 158 : 264; radius: 8
                         color: sl.th.deep
-                        border.color: cell.on ? sl.th.hi : "transparent"; border.width: 3
+                        border.color: cell.on || cell.hov ? sl.th.hi : "transparent"; border.width: 3
                         scale: cell.on ? 1.07 : 1
                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                         clip: true
@@ -264,10 +271,10 @@ Item {
                     }
                 }
                 MouseArea {
+                    id: cellMa
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onPositionChanged: if (sl.cine.mouseMode) { sl.cine.sFocus = "results"; sl.cine.resIndex = cell.index; }
                     onClicked: { sl.cine.sFocus = "results"; sl.cine.resIndex = cell.index; sl.cine.searchButton("a"); }
                 }
             }
