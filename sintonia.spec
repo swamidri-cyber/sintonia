@@ -67,6 +67,17 @@ a = Analysis(
               "PySide6.QtGraphs", "PySide6.QtQuick3D", "PySide6.QtDesigner", "PySide6.QtPdf"],
     noarchive=False,
 )
+# lo que la app no usa de Qt (3D, gráficos, mapas, estilos de controles): afuera
+import re as _re
+_SOBRA = _re.compile(r"(Qt63D|Qt6Quick3D|Qt6Graphs|Qt6Charts|Qt6DataVisualization|Qt6Location|Qt6Positioning|"
+                     r"Qt6LabsStyleKit|Qt6VirtualKeyboard|Qt6TextToSpeech|Qt6Sensors|"
+                     r"QuickControls2(Fusion|Universal|Material|Imagine|FluentWinUI3|IOS|MacOS)|"
+                     r"qml[/\\](Qt3D|QtQuick3D|QtCharts|QtGraphs|QtDataVisualization|QtLocation|QtPositioning|"
+                     r"QtTextToSpeech|QtSensors|QtQuick[/\\](Scene3D|Scene2D|VirtualKeyboard)|"
+                     r"QtQuick[/\\]Controls[/\\](Fusion|Universal|Material|Imagine|FluentWinUI3|iOS|macOS)|Qt[/\\]labs[/\\]stylekit))")
+a.binaries = [b for b in a.binaries if not _SOBRA.search(b[0])]
+a.datas = [d for d in a.datas if not _SOBRA.search(d[0])]
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],

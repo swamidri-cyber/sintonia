@@ -11,17 +11,6 @@ $VM 'set -e; cd ~/armado
   cd sintonia/shaders && for f in *.frag; do ~/venv/bin/pyside6-qsb --qt6 -o $f.qsb $f; done; cd ~/armado
   ~/venv/bin/pyinstaller --noconfirm --log-level WARN sintonia.spec 2>&1 | tail -15
   du -sh dist/Sintonia'
-# Lo que la app no usa de Qt (3D, gráficos, mapas, estilos de controles)
-$VM 'set -e; cd ~/armado/dist/Sintonia/_internal/PySide6/Qt
-  rm -rf qml/Qt3D qml/QtQuick3D qml/QtCharts qml/QtGraphs qml/QtDataVisualization qml/QtLocation qml/QtPositioning \
-         qml/QtQuick/Controls/Fusion qml/QtQuick/Controls/Universal qml/QtQuick/Controls/Material \
-         qml/QtQuick/Controls/Imagine qml/QtQuick/Controls/FluentWinUI3 qml/QtQuick/Controls/iOS qml/QtQuick/Controls/macOS \
-         qml/QtQuick/Scene3D qml/QtQuick/Scene2D qml/QtQuick/VirtualKeyboard qml/QtTextToSpeech qml/QtSensors qml/Qt/labs/stylekit
-  rm -f lib/libQt63D* lib/libQt6Quick3D* lib/libQt6Graphs* lib/libQt6Charts* lib/libQt6DataVisualization* \
-        lib/libQt6Location* lib/libQt6LabsStyleKit* lib/libQt6VirtualKeyboard* lib/libQt6TextToSpeech* lib/libQt6Sensors* \
-        lib/libQt6QuickControls2Fusion* lib/libQt6QuickControls2Universal* lib/libQt6QuickControls2Material* \
-        lib/libQt6QuickControls2Imagine* lib/libQt6QuickControls2FluentWinUI3* lib/libQt6QuickControls2IOS* lib/libQt6QuickControls2MacOS*
-  du -sh ~/armado/dist/Sintonia'
 # AppImage
 $VM 'set -e; cd ~/armado
   [ -x ~/appimagetool ] || { curl -sL -o ~/appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage; chmod +x ~/appimagetool; }
