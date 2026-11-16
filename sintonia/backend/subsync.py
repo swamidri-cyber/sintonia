@@ -58,7 +58,8 @@ def parse_srt(path):
 def ref_subs(url, t0, dur, track):
     """Subtítulos del propio archivo en [t0, t0+dur] (tiempos absolutos)."""
     # -copyts + -to: tiempos absolutos (con -t se cortaba enseguida sin nada)
-    r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-copyts", "-ss", f"{t0:.2f}", "-i", url,
+    import servidor
+    r = subprocess.run([servidor.ffmpeg("ffmpeg"), "-nostdin", "-v", "error", "-copyts", "-ss", f"{t0:.2f}", "-i", url,
                         "-to", f"{t0 + dur:.2f}", "-map", f"0:s:{track}", "-f", "srt", "-"],
                        capture_output=True, text=True, timeout=dur * 3 + 90)
     subs = parse_srt_text(r.stdout)
@@ -66,7 +67,8 @@ def ref_subs(url, t0, dur, track):
 
 
 def audio(url, t0, dur):
-    r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t0:.2f}", "-t", f"{dur:.2f}", "-i", url,
+    import servidor
+    r = subprocess.run([servidor.ffmpeg("ffmpeg"), "-nostdin", "-v", "error", "-ss", f"{t0:.2f}", "-t", f"{dur:.2f}", "-i", url,
                         "-vn", "-ac", "1", "-ar", str(RATE), "-f", "s16le", "-"],
                        capture_output=True, timeout=dur * 3 + 90)
     return np.frombuffer(r.stdout, dtype=np.int16).astype(np.float32) / 32768.0

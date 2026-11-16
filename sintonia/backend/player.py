@@ -243,6 +243,12 @@ def ensure_server():
     env.setdefault("APP_PATH", os.path.join(lugares.DATA_USER, "stremio-server"))
     os.makedirs(env["APP_PATH"], exist_ok=True)
     env["NO_CORS"] = "1"
+    try:
+        import servidor
+        env.setdefault("FFMPEG_BIN", servidor.ffmpeg("ffmpeg"))
+        env.setdefault("FFPROBE_BIN", servidor.ffmpeg("ffprobe"))
+    except Exception:
+        pass
     kw = {"creationflags": 0x00000008 | 0x00000200 | 0x08000000} if os.name == "nt" else {"start_new_session": True}
     subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      stdin=subprocess.DEVNULL, **kw)
@@ -304,7 +310,8 @@ def probe_watched(url, timeout, alive, dead_after=15):
 
 
 def probe(url, timeout):
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+    import servidor
+    r = subprocess.run([servidor.ffmpeg("ffprobe", lambda m: emit(ev="status", msg=m)), "-v", "error", "-show_entries",
                         "stream=index,codec_type,codec_name:stream_tags=language,title:stream_disposition=forced,default",
                         "-of", "json", url], capture_output=True, text=True, timeout=timeout)
     streams = json.loads(r.stdout or "{}").get("streams") or []
@@ -532,7 +539,7 @@ def main():
         serve()
     else:
         job = json.loads(sys.argv[1])
-    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+    for sig in [getattr(signal, n) for n in ("SIGTERM", "SIGHUP", "SIGINT", "SIGBREAK") if hasattr(signal, n)]:
         signal.signal(sig, on_signal)
     threading.Thread(target=flush_pending, daemon=True).start()
     # lo que el cine necesita para rearmar la pantalla al volver
@@ -662,7 +669,8 @@ def lan_ip(host):
 
 def to_vtt(src, dst, speed, delay):
     """Subtítulos → WebVTT con el ajuste aplicado (como mpv: t·speed + delay)."""
-    r = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-f", "webvtt", "-"], capture_output=True, timeout=60)
+    import servidor
+    r = subprocess.run([servidor.ffmpeg("ffmpeg"), "-v", "error", "-i", src, "-f", "webvtt", "-"], capture_output=True, timeout=60)
     text = r.stdout.decode("utf-8", errors="replace")
 
     def fix(m):

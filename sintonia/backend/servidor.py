@@ -116,6 +116,46 @@ def instalar(avisar=print):
     return [NODE, SERVER]
 
 
+# ── ffmpeg / ffprobe (mirar las pistas, sincronizar subtítulos, la tele) ────
+FF_DIR = os.path.join(lugares.DATA_USER, "ffmpeg")
+FF_URL = ("https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
+          + ("ffmpeg-master-latest-win64-gpl.zip" if ES_WIN else "ffmpeg-master-latest-linux64-gpl.tar.xz"))
+
+
+def ffmpeg(nombre="ffmpeg", avisar=None):
+    """Ruta de ffmpeg o ffprobe: el del sistema si hay; si no, el que baja la app."""
+    sis = shutil.which(nombre)
+    if sis:
+        return sis
+    exe = os.path.join(FF_DIR, nombre + (".exe" if ES_WIN else ""))
+    if os.path.exists(exe):
+        return exe
+    os.makedirs(FF_DIR, exist_ok=True)
+    if avisar:
+        avisar("BAJANDO FFMPEG (SOLO LA PRIMERA VEZ)…")
+    datos = _bajar(FF_URL, timeout=120)
+    quiero = {"ffmpeg", "ffprobe"}
+    if ES_WIN:
+        with zipfile.ZipFile(io.BytesIO(datos)) as z:
+            for n in z.namelist():
+                b = os.path.basename(n)
+                if b in ("ffmpeg.exe", "ffprobe.exe"):
+                    with open(os.path.join(FF_DIR, b), "wb") as f:
+                        f.write(z.read(n))
+    else:
+        with tarfile.open(fileobj=io.BytesIO(datos), mode="r:xz") as t:
+            for m in t.getmembers():
+                b = os.path.basename(m.name)
+                if b in quiero and m.isfile():
+                    dst = os.path.join(FF_DIR, b)
+                    with open(dst, "wb") as f:
+                        f.write(t.extractfile(m).read())
+                    os.chmod(dst, 0o755)
+    if not os.path.exists(exe):
+        raise RuntimeError("no pude bajar " + nombre)
+    return exe
+
+
 def listo():
     return os.path.exists(NODE) and os.path.exists(SERVER)
 
