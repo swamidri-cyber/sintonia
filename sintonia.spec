@@ -49,7 +49,7 @@ for paquete in ("pychromecast", "zeroconf", "casttube", "yt_dlp", "segno", "sdl2
 
 # libmpv: en Linux la del sistema donde se arma; en Windows libmpv-2.dll al lado del .spec
 if ES_WIN:
-    for dll in glob.glob(os.path.join(RAIZ, "libmpv-2.dll")):
+    for dll in glob.glob(os.path.join(RAIZ, "libmpv-2.dll")) + glob.glob(os.path.join(RAIZ, "vulkan-1.dll")):
         binaries.append((dll, "."))
 else:
     for so in ("/usr/lib/x86_64-linux-gnu/libmpv.so.2", "/usr/lib/libmpv.so.2", "/usr/lib64/libmpv.so.2"):
