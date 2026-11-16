@@ -569,6 +569,8 @@ Item {
         // pruebas: abrir la pantalla de reseña de una película (tt…)
         function review(id: string, name: string): void { root.openReview(id, name, false) }
         function go(t: string): void { root.setTab(t) }
+        // un video de la compu (también para las pruebas)
+        function playFile(path: string, name: string): void { root.playFile(path, name) }
         function find(q: string): void { root.openSearch(); root.setQuery(q); }
         function key(k: string): void { ["up", "down", "left", "right"].includes(k) ? root.navigate(k) : root.button(k); }
         function dbg(): string { return JSON.stringify({ rv: root.rvState, rvUser: root.rvUser, rvMsg: root.rvMsg, play: root.playStep, playIndex: root.playIndex, playMsg: root.playMsg, playErr: root.playErr, casting: root.casting, castName: root.castName, devices: root.castDevices.length, phase: root.phase, tab: root.tab, platform: root.platform, rows: root.rows.map(r => r.id + ":" + r.items.length), row: root.rowIndex, col: root.col, current: root.current?.name, loginError: root.loginError }); }
@@ -1308,6 +1310,17 @@ Item {
             type: "video", id: play.item.id, videoId: play.item.id, name: play.item.name, channel: play.item.channel ?? "",
             start: (play.start || 0) / 1000, nosave: testMode });
     }
+    function playFile(path, name) {
+        play = { item: { id: "file:" + path, name: name, type: "archivo" }, start: 0 };
+        playLang = { lang: "", label: name }; playSubs = false; playTarget = null;
+        playStep = "load";
+        playMsg = "SINTONIZANDO…";
+        playStats = { peers: 0, speed: 0, progress: 0 };
+        pst = { pos: 0, dur: 0, pause: false, buffering: false, cache: 100, subDelay: 0 };
+        ptracks = { audio: [], subs: [] };
+        trackMenu = ""; ctrlFocus = 0; ctrlIndex = 0; syncInfo = null; syncNote = "";
+        runPlayer({ type: "archivo", id: "file:" + path, videoId: "file:" + path, name: name, url: path, nosave: true });
+    }
     function launchPlayer() {
         lastChoice = { lang: playLang.lang, subs: playSubs, auto: false, target: playTarget };
         playStep = "load";
@@ -1965,6 +1978,13 @@ Item {
         color: "black"
         // al cerrarse la tele, la app termina
         onClosing: App.quit()
+
+        // ── El video (mpv adentro de la app, abajo de todo: lo demás va encima) ──
+        MpvVideo {
+            id: video
+            anchors.fill: parent
+            visible: activo
+        }
 
         // ── Fondo: la imagen del título elegido, a pantalla completa ──
         // (SINTONÍA: va DEBAJO de la capa con el filtro de tele, así la imagen se

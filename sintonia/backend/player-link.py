@@ -5,9 +5,9 @@
   player-link.py attach           se engancha a la que esté andando, si hay
   player-link.py send <orden>     le manda una orden suelta (si hay sesión)
 
-La película corre en player.py --serve, aparte del cine (systemd-run), así
-que no se corta si el cine se cierra o se recarga: lo único que muere es
-este puente. Hace de stdin/stdout de la sesión, igual que antes player.py.
+La película corre en player.py --serve, en un proceso aparte, así que la
+búsqueda de fuentes no se corta si se recarga la interfaz: lo único que
+muere es este puente. Hace de stdin/stdout de la sesión, igual que antes player.py.
 Si no hay sesión, "attach" contesta {"ev":"none"} y termina.
 """
 import os
@@ -18,19 +18,14 @@ import threading
 import time
 
 import lugares  # carpetas de SINTONÍA
+import canal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME = lugares.RUNTIME
-LINK = os.path.join(RUNTIME, "player.sock")
-# lo que mpv y hyprctl necesitan del entorno gráfico
-ENV = ("WAYLAND_DISPLAY", "DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "XDG_RUNTIME_DIR", "PATH",
-       "XDG_CURRENT_DESKTOP", "DBUS_SESSION_BUS_ADDRESS")
 
 
 def connect():
-    s = socket.socket(socket.AF_UNIX)
-    s.connect(LINK)
-    return s
+    return canal.conectar("player", timeout=3)
 
 
 def start(job):
@@ -44,12 +39,11 @@ def start(job):
         old.close()
     except OSError:
         pass
-    cmd = ["systemd-run", "--user", "--quiet", "--collect", "-p", "KillMode=process",
-           f"--unit=rice-cine-player-{int(time.time() * 1000)}"]
-    cmd += [f"--setenv={k}={os.environ[k]}" for k in ENV if k in os.environ]
-    cmd += [sys.executable, os.path.join(HERE, "player.py"), "--serve", job]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(100):
+    canal.cerrar("player")
+    log = open(os.path.join(RUNTIME, "player.log"), "ab")
+    subprocess.Popen(lugares.python("player.py") + ["--serve", job], stdout=log, stderr=log,
+                     stdin=subprocess.DEVNULL, **lugares.separado())
+    for _ in range(150):
         try:
             return connect()
         except OSError:

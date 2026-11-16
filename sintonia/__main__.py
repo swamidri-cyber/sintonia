@@ -57,8 +57,11 @@ def abrir() -> int:
     from PySide6.QtCore import QUrl, Qt
     from PySide6.QtGui import QFontDatabase, QGuiApplication, QIcon
     from PySide6.QtQml import QQmlApplicationEngine
+    from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 
     from . import compat, rutas  # registra los tipos de QML  # noqa: F401
+    # el video de mpv se dibuja con OpenGL (en Windows Qt usaría Direct3D)
+    QQuickWindow.setGraphicsApi(QSGRendererInterface.GraphicsApi.OpenGL)
 
     QGuiApplication.setApplicationName("Sintonía")
     QGuiApplication.setOrganizationName("Sintonia")
@@ -67,6 +70,10 @@ def abrir() -> int:
     app = QGuiApplication(sys.argv)
     if ya_abierta():
         return 0   # ya estaba abierta: se le pidió que se muestre
+    import locale
+    locale.setlocale(locale.LC_NUMERIC, "C")   # libmpv lo pide
+    from . import video  # noqa: F401  (MpvVideo + el canal "mpv")
+    video.anfitrion()
     icono = os.path.join(rutas.DATOS, "icono.png")
     if os.path.exists(icono):
         app.setWindowIcon(QIcon(icono))

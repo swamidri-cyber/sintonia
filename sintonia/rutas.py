@@ -31,14 +31,16 @@ if ES_WINDOWS:
     ESTADO = os.path.join(_local, "Sintonia", "estado")
     CACHE = os.path.join(_local, "Sintonia", "cache")
     RUNTIME = os.path.join(tempfile.gettempdir(), "sintonia-" + os.environ.get("USERNAME", "usuario"))
+    DATOS_USUARIO = os.path.join(_local, "Sintonia", "datos")
 else:
     CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "sintonia")
     ESTADO = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), "sintonia")
     CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"), "sintonia")
     _rt = os.environ.get("XDG_RUNTIME_DIR")
     RUNTIME = os.path.join(_rt, "sintonia") if _rt else os.path.join(tempfile.gettempdir(), f"sintonia-{os.getuid()}")
+    DATOS_USUARIO = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "sintonia")
 
-for _d in (CONFIG, ESTADO, CACHE, RUNTIME):
+for _d in (CONFIG, ESTADO, CACHE, RUNTIME, DATOS_USUARIO):
     os.makedirs(_d, exist_ok=True)
 if not ES_WINDOWS:
     os.chmod(RUNTIME, 0o700)
@@ -58,9 +60,11 @@ def entorno_backend() -> dict[str, str]:
         "SINTONIA_CACHE": CACHE,
         "SINTONIA_RUNTIME": RUNTIME,
         "SINTONIA_DATA": DATOS,
+        "SINTONIA_DATA_USER": DATOS_USUARIO,
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
         "PYTHONUNBUFFERED": "1",
+        "SINTONIA_FROZEN": "1" if EMPAQUETADA else "0",
     }
 
 

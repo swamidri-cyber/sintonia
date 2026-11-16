@@ -53,11 +53,10 @@ import subsync  # noqa: E402
 import numpy as np  # noqa: E402
 
 import lugares  # carpetas de SINTONÍA
+import canal  # sockets locales (Linux y Windows)
 
 SERVER = "http://127.0.0.1:11470"
 RUNTIME = lugares.RUNTIME
-SOCK = os.path.join(RUNTIME, "mpv.sock")
-LINK = os.path.join(RUNTIME, "player.sock")       # sesión (modo --serve)
 SUBDIR = os.path.join(stremio.CACHE, "subs")
 STATE = lugares.STATE
 DELAYS = os.path.join(STATE, "subdelay.json")
@@ -120,15 +119,9 @@ def emit(**kw):
 
 
 def serve():
-    """Escucha al cine en LINK. Un "quit" antes de que arranque mpv corta
+    """Escucha al cine en el canal "player". Un "quit" antes de que arranque mpv corta
     la búsqueda de fuentes; después, las órdenes van a la cola de mpv."""
-    try:
-        os.unlink(LINK)
-    except OSError:
-        pass
-    srv = socket.socket(socket.AF_UNIX)
-    srv.bind(LINK)
-    srv.listen(4)
+    srv = canal.escuchar("player", 4)
     SES["serving"] = True
 
     def client(c):
@@ -172,10 +165,7 @@ def end_session():
     set_gain(1.0)                      # el refuerzo nunca queda puesto para otra cosa
     if not SES["serving"]:
         return
-    try:
-        os.unlink(LINK)
-    except OSError:
-        pass
+    canal.cerrar("player")
     with lock:
         for c in SES["clients"]:
             try:
@@ -195,29 +185,9 @@ def commands():
         yield cmds.get()
 
 
-def player_window():
-    try:
-        cl = json.loads(subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True, timeout=3).stdout)
-        return next((c for c in cl if c.get("class") == "rice-cine-player"), None)
-    except Exception:
-        return None
-
-
 def move_player(workspace):
-    """Esconde mpv en el escritorio especial (mientras el cine está cerrado)
-    o lo trae al escritorio actual."""
-    w = player_window()
-    if not w:
-        return
-    if workspace is None:
-        try:
-            workspace = json.loads(subprocess.run(["hyprctl", "activeworkspace", "-j"], capture_output=True,
-                                                  text=True, timeout=3).stdout)["id"]
-        except Exception:
-            return
-    ws = f'"{workspace}"' if isinstance(workspace, str) else str(workspace)
-    subprocess.run(["hyprctl", "dispatch", f'hl.dsp.window.move({{ workspace = {ws}, follow = false, window = "address:{w["address"]}" }})'],
-                   capture_output=True, timeout=3)
+    """(rice-cine movía la ventana de mpv con Hyprland; en SINTONÍA el video está
+    adentro de la app, así que no hay nada que mover)"""
 
 
 def http_json(url, data=None, timeout=10):
@@ -235,14 +205,48 @@ def server_up():
         return False
 
 
+def server_cmd():
+    """Cómo prender el servidor de Stremio: el que viene con SINTONÍA, o el de
+    una app de Stremio instalada (flatpak, paquete) con su node."""
+    import shutil
+    exe = ".exe" if os.name == "nt" else ""
+    data = lugares.DATA
+    for base in (os.path.join(data, "stremio"), os.path.join(os.path.dirname(data), "stremio")):
+        js = os.path.join(base, "server.js")
+        node = os.path.join(base, "node" + exe)
+        if os.path.exists(js):
+            if os.path.exists(node):
+                return [node, js], base
+            if shutil.which("node"):
+                return [shutil.which("node"), js], base
+    if os.name != "nt" and shutil.which("flatpak") and (os.path.isdir("/var/lib/flatpak/app/com.stremio.Stremio") or
+                                                       os.path.isdir(os.path.expanduser("~/.local/share/flatpak/app/com.stremio.Stremio"))):
+        return ["flatpak", "run", "--command=node", "com.stremio.Stremio", "/app/libexec/stremio/server.js"], None
+    for js in ("/usr/share/stremio/server.js", "/opt/stremio/server.js", "/usr/lib/stremio/server.js",
+               os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "LNV", "Stremio-4", "server.js")):
+        if os.path.exists(js):
+            node = os.path.join(os.path.dirname(js), "stremio-runtime" + exe)
+            node = node if os.path.exists(node) else shutil.which("node")
+            if node:
+                return [node, js], os.path.dirname(js)
+    return None, None
+
+
 def ensure_server():
     if server_up():
         return True
+    cmd, cwd = server_cmd()
+    if not cmd:
+        return False
     emit(ev="status", msg="PRENDIENDO EL SERVIDOR DE STREMIO…")
-    subprocess.Popen(["flatpak", "run", "--command=node", "com.stremio.Stremio", "/app/libexec/stremio/server.js"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                     start_new_session=True)
-    for _ in range(40):
+    env = dict(os.environ)
+    env.setdefault("APP_PATH", os.path.join(lugares.DATA_USER, "stremio-server"))
+    os.makedirs(env["APP_PATH"], exist_ok=True)
+    env["NO_CORS"] = "1"
+    kw = {"creationflags": 0x00000008 | 0x00000200 | 0x08000000} if os.name == "nt" else {"start_new_session": True}
+    subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL, **kw)
+    for _ in range(60):
         time.sleep(0.5)
         if server_up():
             return True
@@ -407,12 +411,14 @@ def download_subs(type_, video_id, filename, size):
 
 # ── mpv ─────────────────────────────────────────────────────────────────────
 def settings():
-    """~/.config/rice-cine/settings.json: tipografía, tamaño y altura de los subtítulos."""
+    """settings.json (CONFIGURACIÓN): tipografía, tamaño y altura de los subtítulos…"""
     d = {"subFont": "Figtree SemiBold", "subSize": 34, "subMargin": 34, "subMarginControls": 140}
-    try:
-        d.update(json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json"))))
-    except Exception:
-        pass
+    for f in (os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.default.json"),
+              os.path.join(lugares.CONFIG, "settings.json")):
+        try:
+            d.update(json.load(open(f, encoding="utf-8")))
+        except Exception:
+            pass
     return d
 
 
@@ -462,50 +468,37 @@ def order_streams(streams):
 
 
 def force_fullscreen():
-    """La regla de Hyprland no siempre agarra el --fs de mpv: se lo pide por
-    la dirección de la ventana (config en Lua: hl.dsp.window.fullscreen).
-    Como esa orden alterna, se vigila unos segundos y se corrige solo si hace
-    falta (mpv a veces se pone en pantalla completa solo, un toque después)."""
-    last, stable, t0 = 0.0, 0, time.time()
-    while time.time() - t0 < 12 and stable < 6:
-        try:
-            cl = json.loads(subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True, timeout=3).stdout)
-            w = next((c for c in cl if c.get("class") == "rice-cine-player"), None)
-            if w and w.get("fullscreen"):
-                stable += 1
-                if stable == 2:
-                    emit(ev="fullscreen")      # recién ahora la interfaz se puede volver transparente
-            elif w:
-                stable = 0
-                if time.time() - last > 1.2:
-                    last = time.time()
-                    subprocess.run(["hyprctl", "dispatch", f'hl.dsp.window.fullscreen({{ window = "address:{w["address"]}" }})'],
-                                   capture_output=True, timeout=3)
-        except Exception:
-            pass
-        time.sleep(0.4)
+    """El video ya está en la ventana de la app (pantalla completa): solo avisar."""
+    emit(ev="fullscreen")
 
 
 class Mpv:
-    def __init__(self, proc):
-        self.proc = proc
+    """mpv adentro de SINTONÍA (sintonia/video.py): canal "mpv" + el mismo
+    JSON que el socket de mpv. La primera línea le pasa los argumentos."""
+
+    def __init__(self, args):
+        self.args = args
         self.sock = None
         self.buf = b""
         self.props = {}
         self.req = 0
+        self.vivo = False
 
     def connect(self):
         for _ in range(100):
-            if self.proc.poll() is not None:
-                return False
             try:
-                s = socket.socket(socket.AF_UNIX)
-                s.connect(SOCK)
+                s = canal.conectar("mpv", timeout=3)
+                s.sendall((json.dumps({"open": self.args}) + "\n").encode())
                 self.sock = s
+                self.vivo = True
                 return True
             except OSError:
                 time.sleep(0.1)
         return False
+
+    def poll(self):
+        """como Popen.poll(): None mientras la película está abierta"""
+        return None if self.vivo else 0
 
     def cmd(self, *args):
         self.req += 1
@@ -519,8 +512,10 @@ class Mpv:
             try:
                 chunk = self.sock.recv(65536)
             except OSError:
+                self.vivo = False
                 return
             if not chunk:
+                self.vivo = False
                 return
             self.buf += chunk
             while b"\n" in self.buf:
@@ -549,6 +544,11 @@ def main():
 
     if job.get("type") == "video":
         youtube(job)
+        return
+    if job.get("type") == "archivo":      # un video de la compu: sin Stremio ni cuenta
+        args = ["mpv", job["url"], "--keep-open=yes", "--no-osc", "--osd-level=0", "--save-position-on-quit=no",
+                "--no-resume-playback"] + sub_style() + ([f"--af={audio_filter()}"] if audio_filter() else [])
+        run_mpv(job, args, {"s": {"title": job.get("name", ""), "res": 0, "hash": ""}, "url": job["url"]}, None, "", 0)
         return
     if not ensure_server():
         emit(ev="error", msg="No arrancó el servidor de Stremio")
@@ -594,7 +594,7 @@ def main():
         return
 
     args = ["mpv", chosen["url"], "--fs", "--wayland-app-id=rice-cine-player", "--title=" + job.get("name", "Modo cine"),
-            f"--input-ipc-server={SOCK}", "--no-osc", "--osd-level=0", "--osd-playing-msg=", "--keep-open=yes",
+            "--no-osc", "--osd-level=0", "--osd-playing-msg=", "--keep-open=yes",
             "--save-position-on-quit=no", "--no-resume-playback", "--cache=yes", "--demuxer-max-bytes=400MiB",
             "--demuxer-readahead-secs=60", "--cursor-autohide=always",
             f"--aid={chosen['aid']}",
@@ -773,7 +773,7 @@ def _send_progress(rec):
 
 
 def save_progress(job, pos, dur, start, finished):
-    if test_mode():
+    if test_mode() or job.get("type") == "archivo":
         return
     # menos de un minuto visto: no pisar dónde habías quedado (arranque en falso)
     if dur <= 0 or (not finished and pos - start < 60):
@@ -1289,7 +1289,7 @@ def youtube(job):
             "--ytdl-format=bv*[height<=1080][vcodec!*=av01]+ba/bv*[height<=1080]+ba/b",
             f"--script-opts=ytdl_hook-ytdl_path={yt.YTDLP}",
             "--fs", "--wayland-app-id=rice-cine-player", "--title=" + job.get("name", "YouTube"),
-            f"--input-ipc-server={SOCK}", "--no-osc", "--osd-level=0", "--osd-playing-msg=", "--keep-open=yes",
+            "--no-osc", "--osd-level=0", "--osd-playing-msg=", "--keep-open=yes",
             "--save-position-on-quit=no", "--no-resume-playback", "--cursor-autohide=always", "--sid=no"]
     start = float(job.get("start") or 0)
     if start > 5:
@@ -1298,12 +1298,8 @@ def youtube(job):
 
 
 def run_mpv(job, args, chosen, sub_ext, sub_key, start):
-    try:
-        os.unlink(SOCK)
-    except OSError:
-        pass
-    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-    mpv = Mpv(proc)
+    mpv = Mpv(args)
+    proc = mpv
     SES["mpv"] = True
     if not mpv.connect():
         emit(ev="error", msg="mpv no arrancó")
@@ -1407,12 +1403,10 @@ def run_mpv(job, args, chosen, sub_ext, sub_key, start):
                 mpv.cmd("set_property", "pause", p[1] == "1")
             elif c == "reloadcfg":
                 apply_cfg(mpv)
-            elif c == "hide":            # el cine se cerró: pausa y a esperar escondida
+            elif c == "hide":            # la ventana se escondió: pausa
                 mpv.cmd("set_property", "pause", True)
-                move_player("special:rice-cine")
-            elif c == "show":            # el cine volvió: al escritorio actual, pantalla completa
-                move_player(None)
-                threading.Thread(target=force_fullscreen, daemon=True).start()
+            elif c == "show":
+                pass
             elif c == "quit":
                 mpv.cmd("quit")
     threading.Thread(target=stdin_loop, daemon=True).start()

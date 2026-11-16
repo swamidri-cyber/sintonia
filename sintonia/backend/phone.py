@@ -72,9 +72,9 @@ import lugares  # carpetas de SINTONÍA
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "phone-app")
 RUNTIME = lugares.RUNTIME
-LINK = os.path.join(RUNTIME, "player.sock")
-FONTS = {"mono.otf": "/usr/share/fonts/OTF/DepartureMonoNerdFont-Regular.otf",
-         "serif.ttf": "/usr/share/fonts/liberation/LiberationSerif-Bold.ttf",
+import canal
+FONTS = {"mono.otf": os.path.join(lugares.FONTS, "DepartureMonoNerdFont-Regular.otf"),
+         "serif.ttf": os.path.join(lugares.FONTS, "LiberationSerif-Bold.ttf"),
          "sans.ttf": os.path.join(lugares.FONTS, "Inter.ttf")}
 CTYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
           ".webmanifest": "application/manifest+json", ".png": "image/png", ".svg": "image/svg+xml",
@@ -204,9 +204,8 @@ def rows_for(ch, tab):
 def session_snapshot():
     """Cómo está la película en curso (lo que el reproductor repite al conectarse)."""
     try:
-        s = socket.socket(socket.AF_UNIX)
+        s = canal.conectar("player", timeout=2)
         s.settimeout(0.6)
-        s.connect(LINK)
     except OSError:
         return {"active": False}
     buf = b""
@@ -234,8 +233,7 @@ def session_snapshot():
 
 def link_send(cmd):
     try:
-        s = socket.socket(socket.AF_UNIX)
-        s.connect(LINK)
+        s = canal.conectar("player", timeout=2)
         s.sendall((cmd + "\n").encode())
         time.sleep(0.15)
         s.close()
