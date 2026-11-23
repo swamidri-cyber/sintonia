@@ -70,6 +70,8 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         mono = Typeface.createFromAsset(getAssets(), "web/font/mono.otf");
         eva = Typeface.createFromAsset(getAssets(), "web/font/serif.ttf");
         armarPantalla();
+        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::atras);
         inmersivo();
         iniciarMpv();
         siguiente();
@@ -100,6 +102,108 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         t.setBackground(g);
         t.setOnClickListener(v -> { cl.onClick(v); mostrar(); });
         return t;
+    }
+
+    /** Botón redondo transparente (los del medio). */
+    private TextView redondo(String txt, int diam, int sp, View.OnClickListener cl) {
+        TextView t = texto(sp, mono, Color.WHITE);
+        t.setText(txt);
+        t.setGravity(Gravity.CENTER);
+        t.setLineSpacing(0, 0.85f);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(Color.argb(46, 255, 255, 255));
+        g.setStroke(dp(1.5f), Color.argb(110, 255, 255, 255));
+        t.setBackground(g);
+        t.setLayoutParams(new LinearLayout.LayoutParams(dp(diam), dp(diam)));
+        t.setMinimumWidth(dp(diam));
+        t.setMinimumHeight(dp(diam));
+        t.setOnClickListener(v -> { cl.onClick(v); mostrar(); });
+        return t;
+    }
+
+    private View syncPanel;
+    private TextView syncVal;
+
+    /** Menú aparte para correr los subtítulos (±0,1 · ±0,5 · ±1 s). */
+    private void armarSync(FrameLayout root) {
+        FrameLayout fondo = new FrameLayout(this);
+        fondo.setBackgroundColor(Color.argb(120, 0, 0, 0));
+        fondo.setVisibility(View.GONE);
+        fondo.setOnClickListener(v -> cerrarSync());
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.setGravity(Gravity.CENTER_HORIZONTAL);
+        p.setPadding(dp(26), dp(20), dp(26), dp(20));
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(26));
+        g.setColor(Color.argb(225, 10, 6, 16));
+        g.setStroke(dp(1.5f), Color.argb(90, 255, 255, 255));
+        p.setBackground(g);
+        p.setClickable(true);
+        TextView t = texto(12, mono, theme);
+        t.setLetterSpacing(0.2f);
+        t.setText("SINCRONIZAR SUBTÍTULOS");
+        t.setGravity(Gravity.CENTER);
+        p.addView(t, new LinearLayout.LayoutParams(-1, -2));
+        syncVal = texto(34, mono, Color.WHITE);
+        syncVal.setPadding(0, dp(6), 0, dp(2));
+        syncVal.setGravity(Gravity.CENTER);
+        p.addView(syncVal, new LinearLayout.LayoutParams(-1, -2));
+        TextView h = texto(12, Typeface.DEFAULT, Color.argb(190, 255, 255, 255));
+        h.setGravity(Gravity.CENTER);
+        h.setText("¿El subtítulo sale antes que la voz? Tocá +.  ¿Sale después? Tocá −.");
+        h.setPadding(0, 0, 0, dp(12));
+        p.addView(h);
+        double[][] filas = {{-1, -0.5, -0.1}, {0.1, 0.5, 1}};
+        for (double[] f : filas) {
+            LinearLayout r = new LinearLayout(this);
+            r.setGravity(Gravity.CENTER);
+            for (double d : f) {
+                String l = (d > 0 ? "+" : "−") + (Math.abs(d) == 1 ? "1" : String.valueOf(Math.abs(d)).replace(".", ",")) + " S";
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(104), -2);
+                lp.setMargins(dp(5), dp(5), dp(5), dp(5));
+                TextView b = boton(l, v -> delay(d));
+                r.addView(b, lp);
+            }
+            p.addView(r);
+        }
+        LinearLayout r = new LinearLayout(this);
+        r.setGravity(Gravity.CENTER);
+        r.setPadding(0, dp(8), 0, 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.setMargins(dp(5), 0, dp(5), 0);
+        r.addView(boton("VOLVER A 0", v -> delay(-subDelay)), lp);
+        TextView listo = boton("LISTO", v -> cerrarSync());
+        GradientDrawable gl = new GradientDrawable();
+        gl.setCornerRadius(dp(24));
+        gl.setColor(Color.WHITE);
+        listo.setBackground(gl);
+        listo.setTextColor(Color.BLACK);
+        r.addView(listo, lp);
+        p.addView(r);
+        fondo.addView(p, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        root.addView(fondo, new FrameLayout.LayoutParams(-1, -1));
+        syncPanel = fondo;
+        pintarSync();
+    }
+
+    private void pintarSync() {
+        if (syncVal != null) syncVal.setText((subDelay > 0 ? "+" : subDelay < 0 ? "−" : "") + String.format("%.1f", Math.abs(subDelay)).replace(".", ",") + " S");
+    }
+
+    private void abrirSync() {
+        syncPanel.setAlpha(0);
+        syncPanel.setVisibility(View.VISIBLE);
+        syncPanel.animate().alpha(1).setDuration(160).start();
+        controls.animate().alpha(0).setDuration(160).start();
+        ui.removeCallbacks(autoOcultar);
+        pintarSync();
+    }
+
+    private void cerrarSync() {
+        syncPanel.animate().alpha(0).setDuration(160).withEndAction(() -> syncPanel.setVisibility(View.GONE)).start();
+        mostrar();
     }
 
     private void armarPantalla() {
@@ -144,8 +248,16 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         top.addView(info);
         c.addView(top);
 
-        View sp = new View(this);
-        c.addView(sp, new LinearLayout.LayoutParams(-1, 0, 1));
+        // el medio: retroceder 10 · pausa grande · adelantar 10 (transparentes)
+        LinearLayout mid = new LinearLayout(this);
+        mid.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lm = new LinearLayout.LayoutParams(-2, -2);
+        lm.setMargins(dp(34), 0, dp(34), 0);
+        mid.addView(redondo("⟲\n10", 64, 15, v -> { cmd("seek", "-10"); avisar("−10 S"); }), lm);
+        ppBtn = redondo("❚❚", 96, 30, v -> togglePause());
+        mid.addView(ppBtn, lm);
+        mid.addView(redondo("⟳\n10", 64, 15, v -> { cmd("seek", "10"); avisar("+10 S"); }), lm);
+        c.addView(mid, new LinearLayout.LayoutParams(-1, 0, 1));
 
         bar = new SeekBar(this);
         bar.setMax(1000);
@@ -175,26 +287,15 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         row.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.setMargins(dp(6), 0, dp(6), 0);
-        row.addView(boton("−10", v -> cmd("seek", "-10")), lp);
-        ppBtn = boton("❚❚", v -> togglePause());
-        ppBtn.setTextSize(18);
-        ppBtn.setTextColor(Color.BLACK);
-        GradientDrawable g = new GradientDrawable();
-        g.setCornerRadius(dp(30));
-        g.setColor(Color.WHITE);
-        ppBtn.setBackground(g);
-        ppBtn.setPadding(dp(30), dp(10), dp(30), dp(10));
-        row.addView(ppBtn, lp);
-        row.addView(boton("+10", v -> cmd("seek", "10")), lp);
-        subBtn = boton("SUBS", v -> toggleSubs());
+        subBtn = boton("SUBTÍTULOS", v -> toggleSubs());
         row.addView(subBtn, lp);
-        row.addView(boton("‹ 0,1 S", v -> delay(-0.1)), lp);
-        row.addView(boton("0,1 S ›", v -> delay(0.1)), lp);
+        row.addView(boton("SINCRONIZAR", v -> abrirSync()), lp);
         row.addView(boton("AUDIO", v -> cicloAudio()), lp);
         row.addView(boton("OTRA FUENTE", v -> { avisar("CAMBIANDO DE FUENTE…"); siguiente(); }), lp);
         c.addView(row);
         controls = c;
         root.addView(c, new FrameLayout.LayoutParams(-1, -1));
+        armarSync(root);
 
         GestureDetector gd = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override public boolean onSingleTapConfirmed(MotionEvent e) { if (controlsOn) ocultar(); else mostrar(); return true; }
@@ -229,7 +330,7 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
     }
 
     private void ocultar() {
-        if (dragging || !loaded) return;
+        if (dragging || !loaded || (syncPanel != null && syncPanel.getVisibility() == View.VISIBLE)) return;
         controlsOn = false;
         controls.animate().alpha(0).setDuration(260).start();
     }
@@ -471,7 +572,7 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         return false;
     }
 
-    private void pintarSubs() { subBtn.setTextColor(subsOn ? theme : Color.WHITE); subBtn.setText(subsOn ? "SUBS ●" : "SUBS"); }
+    private void pintarSubs() { subBtn.setTextColor(subsOn ? theme : Color.WHITE); subBtn.setText(subsOn ? "SUBTÍTULOS ●" : "SUBTÍTULOS"); }
 
     private void toggleSubs() {
         if (subsOn) { MPVLib.setPropertyString("sid", "no"); subsOn = false; avisar("SIN SUBTÍTULOS"); }
@@ -482,7 +583,7 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
     private void delay(double d) {
         subDelay = Math.round((subDelay + d) * 10) / 10.0;
         MPVLib.setPropertyDouble("sub-delay", subDelay);
-        avisar("SUBTÍTULOS " + (subDelay > 0 ? "+" : "") + String.format("%.1f", subDelay).replace(".", ",") + " S");
+        pintarSync();
     }
 
     private void cicloAudio() {
@@ -512,7 +613,12 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
 
     private void salir() { guardar(false, true); }
 
-    @Override public void onBackPressed() { salir(); }
+    @Override public void onBackPressed() { atras(); }
+
+    private void atras() {
+        if (syncPanel != null && syncPanel.getVisibility() == View.VISIBLE) cerrarSync();
+        else salir();
+    }
 
     @Override protected void onPause() {
         super.onPause();

@@ -31,13 +31,15 @@ public class MainActivity extends Activity {
     private final ExecutorService pool = Executors.newFixedThreadPool(8);
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean listo = false;
+    static volatile MainActivity viva;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        viva = this;
         web = new WebView(this);
-        web.setBackgroundColor(Color.parseColor("#07020c"));
+        web.setBackgroundColor(Color.BLACK);   // negro como el arranque: empalma con el encendido del tubo
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -46,12 +48,19 @@ public class MainActivity extends Activity {
         s.setTextZoom(100);
         CookieManager.getInstance().setAcceptCookie(true);
         web.addJavascriptInterface(new Puente(), "Android");
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onConsoleMessage(android.webkit.ConsoleMessage m) {
+                android.util.Log.i("SintoniaWeb", m.message() + " (" + m.sourceId() + ":" + m.lineNumber() + ")");
+                return true;
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView v, String url) { listo = true; entregarPendiente(); }
         });
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         setContentView(web);
+        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
         web.loadUrl("file:///android_asset/web/index.html");
         probar(getIntent());
     }
@@ -61,6 +70,9 @@ public class MainActivity extends Activity {
 
     /** Pruebas: am start -n ar.sintonia/.MainActivity --es probar '{job}' abre el reproductor directo. */
     private void probar(Intent i) {
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return;   // solo en desarrollo
+        String js = i == null ? null : i.getStringExtra("js");
+        if (js != null) { i.removeExtra("js"); ui.postDelayed(() -> web.evaluateJavascript(js, null), 1500); }
         String job = i == null ? null : i.getStringExtra("probar");
         if (job == null) return;
         i.removeExtra("probar");
@@ -87,6 +99,17 @@ public class MainActivity extends Activity {
             js("window.__ended && window.__ended(" + JSONObject.quote(fin) + ")");
         }
     }
+
+    void entregarPendienteAhora() { ui.post(this::entregarPendiente); }
+
+    @Override
+    protected void onStart() { super.onStart(); TeleService.buscar(this, true); }
+
+    @Override
+    protected void onStop() { super.onStop(); TeleService.buscar(this, false); }
+
+    @Override
+    protected void onDestroy() { if (viva == this) viva = null; super.onDestroy(); }
 
     @Override
     protected void onResume() {
@@ -121,6 +144,33 @@ public class MainActivity extends Activity {
             Intent i = new Intent(MainActivity.this, PlayerActivity.class);
             i.putExtra("job", job);
             ui.post(() -> startActivityForResult(i, PLAY));
+        }
+
+        @JavascriptInterface
+        public String teles() { return TeleService.teles(MainActivity.this).toString(); }
+
+        @JavascriptInterface
+        public void castPlay(String route, String job) {
+            ui.post(() -> {
+                if (android.os.Build.VERSION.SDK_INT >= 33
+                        && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 9);
+                Intent i = new Intent(MainActivity.this, TeleService.class);
+                i.putExtra("job", job);
+                i.putExtra("route", route);
+                startForegroundService(i);
+            });
+        }
+
+        @JavascriptInterface
+        public String castState() {
+            TeleService t = TeleService.actual;
+            return t == null ? "{\"active\":false}" : t.estado().toString();
+        }
+
+        @JavascriptInterface
+        public void castCmd(String c) {
+            ui.post(() -> { TeleService t = TeleService.actual; if (t != null) t.comando(c); });
         }
 
         @JavascriptInterface

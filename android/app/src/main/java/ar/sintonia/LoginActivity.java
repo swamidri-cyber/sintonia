@@ -28,6 +28,8 @@ public class LoginActivity extends Activity {
             @Override public void onPageFinished(WebView v, String url) { revisar(); }
         });
         setContentView(web);
+        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
         web.loadUrl("https://letterboxd.com/sign-in/");
     }
 

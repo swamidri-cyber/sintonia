@@ -140,6 +140,33 @@ final class Red {
         return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
     }
 
+    /** La IP del celular en la red de la casa (para que la tele lo encuentre). */
+    static String ipLocal() {
+        try {
+            String alguna = null;
+            for (java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (java.net.InetAddress a : java.util.Collections.list(ni.getInetAddresses())) {
+                    if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress()) {
+                        if (ni.getName().startsWith("wlan") || ni.getName().startsWith("eth")) return a.getHostAddress();
+                        if (alguna == null) alguna = a.getHostAddress();
+                    }
+                }
+            }
+            return alguna != null ? alguna : "127.0.0.1";
+        } catch (Exception e) {
+            return "127.0.0.1";
+        }
+    }
+
+    /** SRT → WebVTT (lo que entiende la tele). */
+    static byte[] srtAVtt(byte[] srt) {
+        String t = new String(srt, StandardCharsets.UTF_8);
+        if (t.startsWith("\uFEFF")) t = t.substring(1);
+        t = t.replace("\r\n", "\n").replaceAll("(\\d\\d:\\d\\d:\\d\\d),(\\d\\d\\d)", "$1.$2");
+        return ("WEBVTT\n\n" + t).getBytes(StandardCharsets.UTF_8);
+    }
+
     static String sha1(String s) {
         try {
             byte[] d = MessageDigest.getInstance("SHA-1").digest(s.getBytes(StandardCharsets.UTF_8));

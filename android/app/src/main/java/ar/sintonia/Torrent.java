@@ -50,6 +50,10 @@ final class Torrent {
     private Server server;
     volatile String error = null;
     volatile String fileName = "";
+    /** true: la tele (Chromecast) le pide el video al celular por la red de la casa */
+    boolean paraLaTele = false;
+    /** subtítulos en WebVTT para la tele (los sirve en /subs.vtt) */
+    volatile byte[] vtt = null;
 
     Torrent(Context c, String hash, int fileIdx, List<String> sources) {
         this.hash = hash.toLowerCase(Locale.ROOT);
@@ -103,9 +107,9 @@ final class Torrent {
             if (lastPiece - 1 > firstPiece) th.setPieceDeadline(lastPiece - 1, 500);
             int port;
             try (ServerSocket ss = new ServerSocket(0)) { port = ss.getLocalPort(); }
-            server = new Server(port);
+            server = new Server(paraLaTele ? null : "127.0.0.1", port);
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true);
-            return "http://127.0.0.1:" + port + "/video";
+            return "http://" + (paraLaTele ? Red.ipLocal() : "127.0.0.1") + ":" + port + "/video";
         } catch (Exception e) {
             Log.e(TAG, "start", e);
             error = String.valueOf(e.getMessage());
@@ -195,9 +199,23 @@ final class Torrent {
     }
 
     private class Server extends NanoHTTPD {
-        Server(int port) { super("127.0.0.1", port); }
+        Server(String host, int port) { super(host, port); }
 
         @Override public Response serve(IHTTPSession s) {
+            Response r = servir(s);
+            r.addHeader("Access-Control-Allow-Origin", "*");          // la tele lo pide desde otra "página"
+            r.addHeader("Access-Control-Allow-Headers", "Range, Content-Type");
+            r.addHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+            return r;
+        }
+
+        private Response servir(IHTTPSession s) {
+            if (s.getMethod() == Method.OPTIONS) return newFixedLengthResponse(Response.Status.OK, "text/plain", "");
+            if (s.getUri().startsWith("/subs")) {
+                byte[] v = vtt;
+                if (v == null) return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
+                return newFixedLengthResponse(Response.Status.OK, "text/vtt; charset=utf-8", new java.io.ByteArrayInputStream(v), v.length);
+            }
             String mime = fileName.toLowerCase(Locale.ROOT).endsWith(".mp4") ? "video/mp4" : "video/x-matroska";
             String range = s.getHeaders().get("range");
             long start = 0, end = fileSize - 1;

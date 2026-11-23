@@ -25,7 +25,6 @@
     <div class="chips" id="chips"></div>
     <div class="tabs" id="tabs"></div>
   </header>
-  <div id="searchBox" class="search hidden"><input id="q" type="search" placeholder="Buscar películas y series…" enterkeyhint="search"></div>
   <main id="rows"></main>
 </section>
 
@@ -34,6 +33,19 @@
   <button class="iconbtn close" id="sheetClose">✕</button>
   <div class="hero" id="hero"></div>
   <div class="info" id="info"></div>
+</section>
+
+<!-- Buscar -->
+<section id="buscar" class="sheet">
+  <div class="bq">
+    <div class="bqTop">
+      <button class="iconbtn" id="bqClose">✕</button>
+      <div class="mono bqLbl">BUSCAR · 探す</div>
+    </div>
+    <div class="bqField"><span class="mono">󰍉</span><input id="q" type="search" placeholder="Película, serie, actor…" enterkeyhint="search" autocomplete="off"><button id="qClear" class="mono hidden">✕</button></div>
+    <div class="seg" id="bqTipo"></div>
+  </div>
+  <div id="bqBody"></div>
 </section>
 
 <!-- Configuración -->
@@ -51,11 +63,56 @@
 <!-- Elegir -->
 <div id="pick" class="pick hidden"><div class="box" id="pickBox"></div></div>
 
+<!-- Control remoto de la tele -->
+<section id="remote" class="remote">
+  <div class="bg" id="rBg"></div>
+  <div class="in">
+    <button class="iconbtn" id="rClose" style="border-color:rgba(255,255,255,.3)">⌄</button>
+    <div class="where" id="rWhere"></div>
+    <div class="eva rt" id="rTitle"></div>
+    <div class="ep" id="rEp"></div>
+    <div class="msg" id="rMsg"></div>
+    <div class="sp"></div>
+    <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div><div class="knob" id="knob"></div></div></div>
+    <div class="times"><span id="tPos">0:00</span><span id="tLeft">-0:00</span></div>
+    <div class="pad">
+      <button data-c="seek -60">-60</button>
+      <button data-c="seek -10">-10</button>
+      <button class="big" id="ppBtn" data-c="pause">❚❚</button>
+      <button data-c="seek 10">+10</button>
+      <button data-c="seek 60">+60</button>
+    </div>
+    <div class="row2">
+      <button data-c="vol -0.05"><b>−</b>VOLUMEN</button>
+      <button data-c="vol 0.05"><b>+</b>VOLUMEN</button>
+      <button id="subBtn" data-c="subs"><b>󰨖</b>SUBTÍTULOS</button>
+      <button data-c="next"><b>⇆</b>OTRA FUENTE</button>
+    </div>
+    <div class="times" id="volLine" style="justify-content:center;margin-top:8px"></div>
+    <button class="exit" id="exitBtn">CORTAR Y APAGAR LA TELE</button>
+  </div>
+</section>
+
+<!-- En la tele ahora -->
+<div id="now" class="now hidden">
+  <div class="th" id="nTh"></div>
+  <div class="tx"><b id="nTitle"></b><span id="nSub"></span></div>
+  <button class="pp" id="nPP">❚❚</button>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 <div id="bars"></div>
 <canvas id="static"></canvas>
 <div id="osd" class="mono"></div>
-<div id="placa"><div class="l1">SINTONÍA</div><div class="l2" id="placaCh">第壱話 · STREMIO</div><div class="l3">同調 · EN EL AIRE</div></div>
+<div id="intro">
+  <div class="stage">
+    <canvas id="introCv"></canvas>
+    <div class="kanji">同調</div>
+    <div class="ttl" id="introTitle"></div>
+    <div class="tag mono" id="introTag"></div>
+    <div class="ibars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+</div>
 
 <script src="stremio.js"></script>
 <script src="app.js"></script>

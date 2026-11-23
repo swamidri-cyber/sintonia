@@ -85,13 +85,15 @@ function normMeta(m) {
   return { id, type: m.type || "movie", name: m.name || "", year: String(m.releaseInfo || m.year || ""),
            rating: String(m.imdbRating || ""), genres: m.genres || m.genre || [], country: m.country || "",
            runtime: m.runtime || "", description: m.description || "",
-           poster: art("poster", id, m.poster), background: art("background", id, m.background), logo: art("logo", id, m.logo) };
+           poster: art("poster", id, m.poster), background: art("background", id, m.background), logo: art("logo", id, m.logo),
+           poster0: m.poster || "", background0: m.background || "" };     // respaldo si las de metahub no existen
 }
 const isoTs = s => { const t = Date.parse(s || ""); return isNaN(t) ? 0 : t / 1000; };
 function normItem(it) {
   const st = it.state || {}, off = st.timeOffset || 0, dur = st.duration || 0, id = it._id;
   return { id, type: it.type || "movie", name: it.name || "", year: String(it.year || ""),
            poster: art("poster", id, it.poster), background: art("background", id, it.background), logo: art("logo", id, it.logo),
+           poster0: it.poster || "", background0: it.background || "",
            offset: off, duration: dur, progress: dur ? off / dur : 0, videoId: st.video_id || "",
            season: st.season || 0, episode: st.episode || 0, lastWatched: isoTs(st.lastWatched || it._mtime),
            watched: !!(st.timesWatched || st.flaggedWatched), inList: !it.removed && !it.temp };
@@ -116,9 +118,9 @@ async function fetchCatalog(src, type, skip = "0", genre = "") {
   if (genre) extra.push("genre=" + encodeURIComponent(genre));
   if (skip && skip !== "0") extra.push("skip=" + skip);
   const url = `${base}/catalog/${type}/${cat}` + (extra.length ? "/" + extra.join("&") : "") + ".json";
-  return ((await getJSON(url, 6 * 3600)).metas || []).filter(m => m.name).map(normMeta);
+  return ((await getJSON(url, 6 * 3600, 10000)).metas || []).filter(m => m.name).map(normMeta);
 }
-async function catalogs(keys) {
+async function catalogs(keys, onEach) {
   const res = {};
   await Promise.all(keys.map(async k => {
     const [src, type, genre] = (k + "||").split("|");
@@ -127,6 +129,7 @@ async function catalogs(keys) {
     const seen = new Set(), out = [];
     for (const l of got) for (const m of l) if (!seen.has(m.id)) { seen.add(m.id); out.push(m); }
     res[k] = out;
+    if (onEach) onEach(k, out);
   }));
   return res;
 }
@@ -221,7 +224,9 @@ function parseStream(st, source) {
            multi: low.includes("multi") || low.includes("dual"), bad: BAD.test(first),
            dv: /\bdv\b|dolby.?vision/.test(low) && !low.includes("hdr"), remux: low.includes("remux"),
            // el teléfono decodifica bien hasta 1080p; 4K pesa demasiado para bajar mientras se ve
-           hevc: /hevc|x265|h\.?265/.test(low) };
+           hevc: /hevc|x265|h\.?265|10.?bit/.test(low), av1: /\bav1\b/.test(low),
+           // lo que el Chromecast no sabe reproducir (o no siempre)
+           audioBad: /\bdts\b|truehd|atmos/.test(low), mkv: /\.mkv\b|\bmkv\b/.test(low) || !/\.mp4\b|\bmp4\b/.test(low) };
 }
 function score(s) {
   if (s.bad || (s.hash && s.seeds === 0)) return -1;
@@ -229,7 +234,8 @@ function score(s) {
   const size = s.size || 4;
   let seeds = Math.min(Math.log10(1 + s.seeds), 2.5) * 1.2;
   if (s.hash && s.seeds < 3) seeds -= 3;
-  return base - size * 0.7 + seeds - (s.dv ? 1.5 : 0) - (s.remux ? 2 : 0);
+  // AV1: casi ningún celular (ni Chromecast) lo decodifica por hardware → último recurso
+  return base - size * 0.7 + seeds - (s.dv ? 1.5 : 0) - (s.remux ? 2 : 0) - (s.av1 ? 6 : 0);
 }
 async function streams(type, id, videoId) {
   let mt = {}; try { mt = (await getJSON(`${CINEMETA}/meta/${type}/${id}.json`, 86400)).meta || {}; } catch (e) {}
