@@ -70,8 +70,19 @@ function osd(t) { const o = $("#osd"); o.textContent = t; o.classList.add("on");
 const ease = { outExpo: k => k >= 1 ? 1 : 1 - Math.pow(2, -10 * k), inCubic: k => k * k * k,
                inOut: k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2, outCubic: k => 1 - Math.pow(1 - k, 3) };
 const clamp01 = v => Math.max(0, Math.min(1, v));
-function encender() {
+// espera a que la vista tenga tamaño (al abrir, el WebView puede medir 0 un instante)
+const conTamano = () => new Promise(res => { const f = () => innerWidth > 0 && innerHeight > 0 ? res() : requestAnimationFrame(f); f(); });
+async function encender() {
+  await conTamano();
   return new Promise(done => {
+    // pase lo que pase, a los 6 s la entrada se va (nunca dejar la pantalla tapada)
+    const red = setTimeout(() => { $("#intro").className = "hidden"; done(); }, 6000);
+    try { animarEntrada(() => { clearTimeout(red); done(); }); }
+    catch (e) { console.log("entrada: " + e); clearTimeout(red); $("#intro").className = "hidden"; done(); }
+  });
+}
+function animarEntrada(done) {
+  {
     const c = chan(), root = $("#intro"), cvs = $("#introCv"), g = cvs.getContext("2d");
     const dpr = 1, W = innerWidth, H = innerHeight;     // resolución de tele vieja: liviano y con grano
     cvs.width = W * dpr; cvs.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -144,7 +155,7 @@ function encender() {
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
-  });
+  }
 }
 
 // ── Canales ────────────────────────────────────────────────────────────────
@@ -163,7 +174,7 @@ function renderChips() {
     b.onclick = () => cambiarCanal(c.id);
     box.appendChild(b);
   }
-  const on = box.querySelector(".on"); if (on) on.scrollIntoView({ inline: "center", block: "nearest" });
+  const on = box.querySelector(".on"); if (on) box.scrollLeft = Math.max(0, on.offsetLeft - (box.clientWidth - on.offsetWidth) / 2);
 }
 async function cambiarCanal(id) {
   if (id === S.ch) return;
