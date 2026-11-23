@@ -1,9 +1,9 @@
-"""SINTONÍA — el navegador de adentro, para iniciar sesión en YouTube y Letterboxd.
+"""SINTONÍA — el navegador de adentro, para iniciar sesión en Letterboxd.
 
 Un perfil propio de QtWebEngine (Chromium) guardado en la carpeta de datos de
 la app. Cuando se detecta que entraste (las cookies de sesión de cada sitio),
 se escriben en cuentas/<servicio>.txt (formato Netscape), que es lo que usan
-los scripts de backend/ (yt-dlp, letterboxd.py).
+los scripts de backend/ (letterboxd.py).
 
 En QML:  Navegador.perfil            → para WebEngineView.profile
          Navegador.url(servicio)     → dónde se inicia sesión
@@ -39,12 +39,6 @@ QML_IMPORT_NAME = "Sintonia"
 QML_IMPORT_MAJOR_VERSION = 1
 
 SERVICIOS = {
-    "youtube": {
-        "url": "https://accounts.google.com/ServiceLogin?service=youtube&hl=es-419&continue="
-               "https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3D%252F",
-        "dominios": ("youtube.com", "google.com"),
-        "marca": ("youtube.com", ("SAPISID", "__Secure-3PAPISID", "LOGIN_INFO")),
-    },
     "letterboxd": {
         "url": "https://letterboxd.com/sign-in/",
         "dominios": ("letterboxd.com",),

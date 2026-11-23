@@ -1,9 +1,8 @@
-"""SINTONÍA — las cuentas (Stremio, YouTube, Letterboxd).
+"""SINTONÍA — las cuentas (Stremio, Letterboxd).
 
 Todo vive en la carpeta de ajustes, solo para el usuario:
 
   cuentas/stremio.json        {"authKey", "email", "addons": [...], "addonsTs"}
-  cuentas/youtube.txt         cookies (formato Netscape, el que entiende yt-dlp)
   cuentas/letterboxd.txt      cookies
   cuentas/navegador.json      {"ua": …} el navegador de la app (Cloudflare mira que coincida)
 
@@ -144,28 +143,12 @@ def sesion_web(servicio, dominio):
     return None, ua()
 
 
-def args_ytdlp():
-    """Cookies para yt-dlp: las de la app; si no, las de Zen/Firefox."""
-    p = archivo_cookies("youtube")
-    if p:
-        # yt-dlp reescribe el archivo: que trabaje sobre una copia
-        cp = os.path.join(lugares.RUNTIME, "yt-cookies.txt")
-        shutil.copy(p, cp)
-        return ["--cookies", cp, "--user-agent", ua()]
-    if os.name != "nt":
-        prof = perfil_firefox()
-        if prof:
-            return ["--cookies-from-browser", "firefox:" + os.path.dirname(prof)]
-    return []
-
-
 def estado():
     """Para la pantalla de cuentas: quién está conectado en cada servicio."""
     st = leer_json("stremio.json") or {}
     nav = leer_json("navegador.json") or {}
     return {
         "stremio": {"ok": bool(st.get("authKey")), "user": st.get("email", "")},
-        "youtube": {"ok": bool(archivo_cookies("youtube")), "user": (nav.get("usuarios") or {}).get("youtube", "")},
         "letterboxd": {"ok": bool(archivo_cookies("letterboxd")), "user": (nav.get("usuarios") or {}).get("letterboxd", "")},
     }
 

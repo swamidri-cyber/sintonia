@@ -3,7 +3,7 @@
 //  de la app y sin lo que dependía del escritorio (monitores, brillo, sonido
 //  del sistema). Botón ≡ del joystick o la tecla coma. B vuelve / cierra.
 //
-//  Secciones: CUENTAS (Stremio, YouTube, Letterboxd), SUBTÍTULOS,
+//  Secciones: CUENTAS (Stremio, Letterboxd), SUBTÍTULOS,
 //  REPRODUCCIÓN, SONIDO, IMAGEN, FIESTAS, TEMPORIZADOR, TELÉFONO y SISTEMA.
 //  La primera vez que se abre la app, es la BIENVENIDA (abre en CUENTAS).
 //
@@ -82,7 +82,7 @@ Item {
         sfx("close");
         fadeAnim.from = fade; fadeAnim.to = 0; fadeAnim.restart();
         cine.stageFocus();
-        cine.refreshAll();                    // cuentas nuevas: catálogos, listas, YouTube
+        cine.refreshAll();                    // cuentas nuevas: catálogos y listas
     }
     NumberAnimation { id: fadeAnim; target: st; property: "fade"; duration: 220; easing.type: Easing.OutCubic }
 
@@ -131,16 +131,9 @@ Item {
                 "Encontré la sesión de la app de Stremio de esta compu y la estoy usando. Podés conectar tu cuenta acá directamente."));
             else out.push(action("Stremio", "CONECTAR", () => stremioForm.abrir(),
                 "Con tu cuenta vienen tus addons (las fuentes para ver), tu lista y dónde quedaste. Sin cuenta solo se ven los catálogos."));
-            out.push(head("YOUTUBE"));
-            const yt = acc.youtube ?? {};
-            if (!Navegador.disponible) out.push(info("YouTube", "SIN NAVEGADOR", "Esta instalación no trae el navegador de adentro."));
-            else if (yt.ok) out.push(action("YouTube" + (yt.user ? " · " + yt.user : " · conectado"), "CERRAR SESIÓN", () => webLogout("youtube"),
-                "Tus suscripciones, recomendaciones y «ver más tarde» en el canal de YouTube."));
-            else out.push(action("YouTube", "CONECTAR", () => cine.openWebLogin("youtube"),
-                "Se abre la página de Google para entrar. Sin cuenta, YouTube muestra lo popular."));
             out.push(head("LETTERBOXD"));
             const lb = acc.letterboxd ?? {};
-            if (!Navegador.disponible) out.push(info("Letterboxd", "SIN NAVEGADOR"));
+            if (!Navegador.disponible) out.push(info("Letterboxd", "SIN NAVEGADOR", "Esta instalación no trae el navegador de adentro."));
             else if (lb.ok) out.push(action("Letterboxd" + (lb.user ? " · " + lb.user : " · conectado"), "CERRAR SESIÓN", () => webLogout("letterboxd"),
                 "Tu watchlist pasa a «Mi lista» y al terminar una película podés dejar la reseña."));
             else out.push(action("Letterboxd", "CONECTAR", () => cine.openWebLogin("letterboxd"),
@@ -265,7 +258,7 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 let d = {}; try { d = JSON.parse(text); } catch (e) {}
-                st.acc = Object.assign({}, st.acc, { youtube: d.youtube ?? {}, letterboxd: d.letterboxd ?? {} },
+                st.acc = Object.assign({}, st.acc, { letterboxd: d.letterboxd ?? {} },
                                        { stremio: Object.assign({}, st.acc.stremio ?? {}, { mine: !!d.stremio?.ok, user: d.stremio?.user ?? "" }) });
             }
         }
@@ -292,7 +285,7 @@ Item {
     }
     function stremioLogout() { logoutProc.running = true; }
     function webLogout(s) { Navegador.olvidar(s); say("SESIÓN CERRADA"); refreshAccounts(); }
-    function webLoggedIn(s, u) { say(s === "youtube" ? "YOUTUBE CONECTADO" : "LETTERBOXD CONECTADO" + (u ? " · " + u : "")); refreshAccounts(); }
+    function webLoggedIn(s, u) { say("LETTERBOXD CONECTADO" + (u ? " · " + u : "")); refreshAccounts(); }
 
     // ── Sistema / teléfono ─────────────────────────────────────────────────
     property var sys: ({})
@@ -512,7 +505,7 @@ Item {
             visible: st.welcome
             Text {
                 width: parent.width; wrapMode: Text.WordWrap
-                text: "Películas, series y YouTube en una sola pantalla, para mirar con el joystick, el teclado o el teléfono."
+                text: "Películas y series en una sola pantalla, para mirar con el joystick, el teclado o el teléfono."
                 font.family: st.sans; font.pixelSize: 26; font.weight: Font.Medium; lineHeight: 1.2
                 color: st.th.fg
             }

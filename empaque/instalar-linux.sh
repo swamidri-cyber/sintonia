@@ -13,8 +13,8 @@ cat > ~/.local/share/applications/sintonia.desktop <<DESK
 [Desktop Entry]
 Type=Application
 Name=Sintonía
-GenericName=Películas, series y YouTube
-Comment=Películas, series y YouTube en una sola pantalla
+GenericName=Películas y series
+Comment=Películas y series en una sola pantalla
 Exec=$HOME/.local/bin/Sintonia
 Icon=sintonia
 Categories=AudioVideo;Video;Player;TV;

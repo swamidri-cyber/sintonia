@@ -54,9 +54,7 @@ Item {
         { id: "prime", ramp: [Qt.rgba(0.004, 0.032, 0.036, 1), Qt.rgba(0.72, 1.0, 0.98, 1)],   ch: "05", name: "PRIME VIDEO", kana: "青",     tint: "cyan",
           colors: { bg: "#010a0b", deep: "#051d20", line: "#145055", dim: "#5bbcc0", fg: "#c8f9f5", hi: "#effffd", warn: "#ffb35a", glow: Qt.rgba(0.35, 1.0, 0.95, 0.55) } },
         { id: "crunchyroll", ramp: [Qt.rgba(0.052, 0.012, 0.000, 1), Qt.rgba(1.0, 0.58, 0.22, 1)], ch: "06", name: "CRUNCHYROLL", kana: "アニメ", tint: "orange",
-          colors: { bg: "#0c0601", deep: "#241204", line: "#6a3410", dim: "#d08a4a", fg: "#ffdcbc", hi: "#fff3e8", warn: "#ff5a8a", glow: Qt.rgba(1.0, 0.6, 0.25, 0.6) } },
-        { id: "youtube", ramp: [Qt.rgba(0.055, 0.003, 0.003, 1), Qt.rgba(1.0, 0.30, 0.26, 1)], ch: "07", name: "YOUTUBE", kana: "動画", tint: "red",
-          colors: { bg: "#0d0101", deep: "#2a0505", line: "#6e1414", dim: "#e2665e", fg: "#ffd8d4", hi: "#ffffff", warn: "#ffd25a", glow: Qt.rgba(1.0, 0.2, 0.15, 0.6) } }
+          colors: { bg: "#0c0601", deep: "#241204", line: "#6a3410", dim: "#d08a4a", fg: "#ffdcbc", hi: "#fff3e8", warn: "#ff5a8a", glow: Qt.rgba(1.0, 0.6, 0.25, 0.6) } }
     ]
     property string platform: "stremio"
     readonly property var plat: platforms.find(p => p.id === platform) ?? platforms[0]
@@ -83,8 +81,7 @@ Item {
     property string loginError: ""
     property bool   touched: false
 
-    readonly property var tabs: platform === "youtube" ? [["home", "INICIO"], ["subs", "SUSCRIPCIONES"], ["you", "TÚ"]]
-                              : [["home", "INICIO"], ["movie", "PELÍCULAS"], ["series", "SERIES"], ["letterboxd", "LETTERBOXD"]]
+    readonly property var tabs: [["home", "INICIO"], ["movie", "PELÍCULAS"], ["series", "SERIES"], ["letterboxd", "LETTERBOXD"]]
     readonly property var genreRows: [["Action", "ACCIÓN"], ["Comedy", "COMEDIA"], ["Drama", "DRAMA"],
                                       ["Thriller", "SUSPENSO"], ["Horror", "TERROR"], ["Sci-Fi", "CIENCIA FICCIÓN"],
                                       ["Animation", "ANIMACIÓN"], ["Romance", "ROMANCE"], ["Crime", "POLICIALES"],
@@ -168,7 +165,6 @@ Item {
                 const c = Object.assign({}, root.srcCache);
                 for (const k in (d.src ?? {})) if (!c[k]) c[k] = { items: d.src[k], done: false, stale: true };
                 root.srcCache = c;
-                if (d.ytHome && !root.ytHome) root.ytHome = Object.assign({ stale: true }, d.ytHome);
                 root.ensureSources();
             } catch (e) {}
         }
@@ -180,9 +176,8 @@ Item {
     function saveSnapshot() {
         const src = {};
         for (const k in srcCache) if (srcCache[k].items?.length) src[k] = srcCache[k].items.slice(0, 120);
-        const yh = ytHome && !ytHome.stale && (ytHome.shelves?.length || ytHome.forYou?.length) ? ytHome : null;
         Quickshell.execDetached(["mkdir", "-p", (Quickshell.env("XDG_CACHE_HOME") || home + "/.cache") + "/rice-cine"]);
-        snapFile.setText(JSON.stringify({ library: library, src: src, ytHome: yh }));
+        snapFile.setText(JSON.stringify({ library: library, src: src }));
     }
 
     // ── Catálogos ───────────────────────────────────────────────────────────
@@ -205,7 +200,7 @@ Item {
                 const ids = new Set(old.items.map(x => x.id));
                 const fresh = (d?.metas ?? []).filter(x => !ids.has(x.id));
                 const c = Object.assign({}, root.srcCache);      // objeto nuevo: si no, QML no avisa
-                c[key] = { items: old.items.concat(fresh), done: !d || !!d.error || fresh.length === 0 || key.startsWith("youtube|") };
+                c[key] = { items: old.items.concat(fresh), done: !d || !!d.error || fresh.length === 0 };
                 root.srcCache = c;
                 // plataformas: juntar unas páginas para que las filas por género tengan con qué
                 const parts = key.split("|");
@@ -233,9 +228,7 @@ Item {
         if (e?.done) { pumpSrc(); return; }
         const parts = key.split("|");
         srcProc.key = key;
-        srcProc.command = parts[0] === "youtube"
-            ? [cfg + "/youtube.py", parts[1]].concat(parts[2] ? [parts[2]] : [])        // youtube|feed|subs, youtube|continue|
-            : [cfg + "/stremio.py", "catalog", parts[0], parts[1], String(e ? e.items.length : 0), parts[2]];
+        srcProc.command = [cfg + "/stremio.py", "catalog", parts[0], parts[1], String(e ? e.items.length : 0), parts[2]];
         srcProc.running = true;
     }
     // ── Carruseles de cada canal ───────────────────────────────────────────
@@ -268,24 +261,7 @@ Item {
     readonly property var animeGenres: [[["Action"], "PELEAS ÉPICAS"], [["Fantasy", "Adventure"], "MUNDOS FANTÁSTICOS"],
         [["Romance"], "ROMANCE"], [["Comedy"], "PARA REÍRSE"], [["Drama"], "DRAMA"], [["Sci-Fi"], "CIENCIA FICCIÓN"],
         [["Mystery", "Horror", "Thriller"], "MISTERIO Y TERROR"]]
-    // YouTube: [tipo, feed, título] (youtube.py, con tu sesión de Zen)
-    //  Secciones como en la app de la tele: INICIO (tu inicio con sus
-    //  categorías), SUSCRIPCIONES y TÚ (historial, ver más tarde, me gusta)
-    property var ytHome: null                   // { forYou, shelves: [{ title, items }] }
-    Process {
-        id: ytHomeProc
-        command: [root.cfg + "/youtube.py", "home"]
-        stdout: StdioCollector {
-            onStreamFinished: { let d = null; try { d = JSON.parse(text); } catch (e) {} if ((!d || d.error) && root.ytHome?.stale) return; root.ytHome = d && !d.error ? d : { forYou: [], shelves: [] }; }
-        }
-    }
     function ensureSources() {
-        if (platform === "youtube") {
-            if (tab === "home") { if ((!ytHome || ytHome.stale) && !ytHomeProc.running) ytHomeProc.running = true; requestSrc("youtube|continue|"); }
-            if (tab === "subs") { requestSrc("youtube|feed|subs"); requestSrc("youtube|subsrelated|"); }
-            if (tab === "you") for (const f of ["history", "later", "liked"]) requestSrc("youtube|feed|" + f);
-            return;
-        }
         let keys = [];
         if (platform === "stremio") {
             const list = tab === "home" ? stremioHome
@@ -338,18 +314,7 @@ Item {
         }
     }
     onTabChanged: ensureSources()
-    onPlatformChanged: { ensureSources(); if (platform === "youtube" && !ytAccount && !ytAcctProc.running) ytAcctProc.running = true; }
-
-    // YouTube: tu cuenta arriba (YtAccount.qml); se esconde al bajar de la primera fila
-    property var ytAccount: null
-    readonly property bool ytCollapsed: platform === "youtube" && (rowIndex > 0 || searchActive)
-    Process {
-        id: ytAcctProc
-        command: [root.cfg + "/youtube.py", "account"]
-        stdout: StdioCollector {
-            onStreamFinished: { try { const d = JSON.parse(text); if (!d.error) root.ytAccount = d; } catch (e) {} }
-        }
-    }
+    onPlatformChanged: ensureSources()
 
     // Búsqueda (en todo el catálogo de Stremio, películas y series)
     property string query: ""
@@ -373,7 +338,7 @@ Item {
         if (searchProc.running) return;            // al terminar vuelve a buscar con lo último
         searching = true;
         searchProc.q = query;
-        searchProc.command = [cfg + (platform === "youtube" ? "/youtube.py" : "/stremio.py"), "search", query.trim()];
+        searchProc.command = [cfg + "/stremio.py", "search", query.trim()];
         searchProc.running = true;
     }
 
@@ -433,31 +398,6 @@ Item {
         const R = [];
         const add = (r, min) => { if (r.loading || r.items.length >= (min ?? 1)) R.push(r); };
         if (plat.external) return R;
-        if (platform === "youtube") {
-            const feed = k => srcItems("youtube|" + k);
-            if (tab === "home") {
-                add(mk("yt-continue", "SEGUIR VIENDO", feed("continue|") ?? []));
-                add(mk("yt-foryou", "PARA VOS", ytHome ? ytHome.forYou : null));
-                // categorías de tu inicio, con "porque viste…" intercalados y "más para vos"
-                const bec = ytHome?.because ?? [], shelves = ytHome?.shelves ?? [];
-                let b = 0;
-                shelves.forEach((sh, i) => {
-                    if (i % 2 === 0 && b < bec.length) { add(mk("yt-b-" + b, bec[b].title.toUpperCase(), bec[b].items)); b++; }
-                    add(mk("yt-s-" + sh.title, sh.title.toUpperCase(), sh.items));
-                    if (i === 3) add(mk("yt-more", "MÁS PARA VOS", ytHome.more ?? []));
-                });
-                for (; b < bec.length; b++) add(mk("yt-b-" + b, bec[b].title.toUpperCase(), bec[b].items));
-            } else if (tab === "subs") {
-                const subs = feed("feed|subs");
-                add(mk("yt-subs", "LO ÚLTIMO DE TUS SUSCRIPCIONES", subs));
-                add(mk("yt-subsrel", "PARECIDO A LO QUE SEGUÍS", feed("subsrelated|")));
-            } else {
-                add(mk("yt-history", "HISTORIAL", feed("feed|history")));
-                add(mk("yt-later", "VER MÁS TARDE", feed("feed|later")));
-                add(mk("yt-liked", "VIDEOS QUE TE GUSTARON", feed("feed|liked")));
-            }
-            return R;
-        }
         if (tab === "letterboxd") return R;          // la grilla la dibuja LbLayer
         const own = l => l.filter(x => belongs(x));
         if (tab === "home") {
@@ -492,7 +432,7 @@ Item {
     function setCol(id, v) { const m = Object.assign({}, colMap); m[id] = v; colMap = m; }
     readonly property int col: curRow ? Math.min(colOf(curRow.id), Math.max(0, curRow.items.length - 1)) : 0
     readonly property var current: searchActive && sFocus === "results" ? (searchResults[resIndex]?.recent ? null : searchResults[resIndex] ?? null)
-                                                                       : tab === "letterboxd" && platform !== "youtube" ? (lbItems[lbIndex] ?? null)
+                                                                       : tab === "letterboxd" ? (lbItems[lbIndex] ?? null)
                                                                        : curRow?.items[col] ?? null
 
     // Fichas completas (descripción, géneros, episodios), a pedido
@@ -516,7 +456,7 @@ Item {
         if (!it || metaCache[it.id] || String(it.id).startsWith("tmdb:")) return;
         if (metaProc.running) { metaProc.queued = it; return; }
         metaProc.id = it.id;
-        metaProc.command = it.type === "video" ? [cfg + "/youtube.py", "meta", it.id] : [cfg + "/stremio.py", "meta", it.type, it.id];
+        metaProc.command = [cfg + "/stremio.py", "meta", it.type, it.id];
         metaProc.running = true;
     }
 
@@ -524,17 +464,11 @@ Item {
     Process {
         id: actProc
         property string msg: ""
-        property bool yt: false
         stdout: StdioCollector {
             onStreamFinished: {
                 let d = null; try { d = JSON.parse(text); } catch (e) {}
                 root.toast = d?.ok ? actProc.msg : "No se pudo: " + (d?.error ?? "error");
                 if (!d?.ok) sfx.play("error");
-                if (actProc.yt) {
-                    actProc.yt = false;
-                    const c = Object.assign({}, root.srcCache); delete c["youtube|continue|"]; root.srcCache = c;
-                    root.requestSrc("youtube|continue|");
-                }
                 libProc.running = true;
             }
         }
@@ -565,10 +499,7 @@ Item {
             else if (p[0] === "press") button(p[1]);
             return;
         }
-        if (!open) {
-            if (ytActive && p[0] === "press" && p[1] === "view") returnFromYouTube(true);
-            return;
-        }
+        if (!open) return;
         if (p[0] === "nav") navigate(p[1]);
         else if (p[0] === "press") button(p[1]);
     }
@@ -615,10 +546,7 @@ Item {
         function modal(on: bool): void { root.modal = on; if (!on && root.open) stage.forceActiveFocus(); }
         function fromConsole(): void { if (!root.open) root.appear(true) }
         function handoff(): void { root.vanish(false) }
-        // pruebas: como el botón VIEW del joystick dentro de YouTube
-        function yt(): string { return JSON.stringify({ ytActive: root.ytActive, ytGuide: root.ytGuide, open: root.open, staticAmt: root.staticAmt, toast: root.toast }) }
         function staticTest(v: real): void { root.staticAmt = v }
-        function channels(): void { if (root.ytActive && !root.open) root.returnFromYouTube(true) }
         function setPlatform(id: string): void { root.switchPlatform(id) }
         // pruebas: reproducir sin guardar progreso en la cuenta
         function test(on: bool): void {
@@ -646,8 +574,6 @@ Item {
         function dbg(): string { return JSON.stringify({ input: root.inputMode, sFocus: root.sFocus, rvEditing: root.rvEditing, rvKey: root.rvKeyIndex, rv: root.rvState, rvUser: root.rvUser, rvMsg: root.rvMsg, play: root.playStep, playIndex: root.playIndex, playMsg: root.playMsg, playErr: root.playErr, casting: root.casting, castName: root.castName, devices: root.castDevices.length, phase: root.phase, tab: root.tab, platform: root.platform, rows: root.rows.map(r => r.id + ":" + r.items.length), row: root.rowIndex, col: root.col, current: root.current?.name, loginError: root.loginError }); }
     }
     function toggle() {
-        if (ytActive && !open) { returnFromYouTube(false); return; }
-        if (ytActive && open && ytGuide) { resumeYouTube(); return; }
         open ? hide() : appear(false);
     }
     function appear(viaConsole) {
@@ -658,7 +584,7 @@ Item {
                 if ((cs.startChannel ?? "stremio") !== "last") platform = "stremio";
                 tab = "home"; rowIndex = 0; focusRowId = rows[0]?.id ?? "";
             }
-            appearQuick(false);
+            appearQuick();
             return;
         }
         fromConsole = !!viaConsole;
@@ -845,11 +771,6 @@ Item {
         else if (b === "b" && (sheetOpen || pickerOpen || epOpen)) sfx.play("back");
         else if (["lb", "rb", "y"].includes(b)) sfx.play("nav");
         if (pickerOpen) {
-            if (ytGuide) {
-                if (b === "b" || b === "y" || b === "view" || (b === "a" && platforms[pickerIndex].id === "youtube")) { resumeYouTube(); return; }
-                if (b === "a") { const id = platforms[pickerIndex].id; pickerOpen = false; closeYouTube(); if (id !== platform) switchPlatform(id); }
-                return;
-            }
             if (b === "a") { pickerOpen = false; switchPlatform(platforms[pickerIndex].id); }
             if (b === "b" || b === "y") pickerOpen = false;
             return;
@@ -917,8 +838,8 @@ Item {
     readonly property var searchResults: {
         const q = norm(query);
         if (q === "") return recents.map(r => ({ recent: true, name: r, id: "recent:" + r }));
-        if (tab === "letterboxd" && platform !== "youtube") return lbItems.filter(x => norm(x.name).includes(q) || String(x.year) === q);
-        if (platform === "stremio" || platform === "youtube" || plat.external) return searchItems;
+        if (tab === "letterboxd") return lbItems.filter(x => norm(x.name).includes(q) || String(x.year) === q);
+        if (platform === "stremio") return searchItems;
         const pool = interleave(srcItems(keyOf(platform, "movie", "")) ?? [], srcItems(keyOf(platform, "series", "")) ?? []);
         const mine = pool.filter(x => norm(x.name).includes(q)).map(x => Object.assign({}, x, { here: true }));
         const seen = {};
@@ -1013,7 +934,6 @@ Item {
     Timer { id: osdTimer; interval: 2600; onTriggered: root.osdOn = false }
     function switchPlatform(id) {
         if (!platforms.some(p => p.id === id) || id === platform || chAnim.running) return;
-        if (platforms.find(p => p.id === id).external) { openYouTubeTV(); return; }
         nextPlatform = id;
         sfx.play("off");
         chAnim.restart();
@@ -1033,113 +953,8 @@ Item {
         NumberAnimation { target: root; property: "staticAmt"; to: 0; duration: 380; easing.type: Easing.InQuad }
     }
 
-    // ── YouTube: la interfaz de la tele (youtube.com/tv) ───────────────────
-    //  Brave sin barras, a pantalla completa, haciéndose pasar por un Smart TV
-    //  (así YouTube muestra su interfaz de tele, para control remoto/joystick).
-    //  Perfil propio en ~/.local/share/rice-cine/youtube-tv (la sesión de
-    //  YouTube se inicia ahí una vez, con el código de youtube.com/activate).
-    //  Al cerrarlo (o con Super+M) vuelve el modo cine.
-    Process {
-        id: ytTv
-        command: ["brave", "--user-data-dir=" + root.home + "/.local/share/rice-cine/youtube-tv",
-                  // sin --kiosk: la pantalla completa la pide el cine (si la pedían los dos, se pisaban)
-                  "--app=https://www.youtube.com/tv", "--no-first-run", "--no-default-browser-check",
-                  "--password-store=basic",          // sesión sin llavero: si no, YouTube pedía el código cada vez
-                  "--ozone-platform=wayland", "--disable-features=Vulkan,Translate",
-                  "--enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL,VaapiIgnoreDriverChecks",
-                  "--enable-gpu-rasterization", "--enable-zero-copy", "--ignore-gpu-blocklist",
-                  "--autoplay-policy=no-user-gesture-required",
-                  // como una tele con Cobalt (el "navegador" de los Smart TV): miniaturas en buena resolución
-                  "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)"]
-        onExited: {
-            ytWait.stop();
-            if (root.ytActive) { root.ytActive = false; root.writeState(false); if (!root.open) root.appearQuick(false); }
-        }
-    }
-    property bool ytActive: false          // YouTube abierto (aunque el cine esté encima con la guía)
-    property bool ytGuide: false           // la guía de canales se abrió desde YouTube
-    // Entrar: el cine queda en estática hasta que YouTube está a pantalla completa
-    function openYouTubeTV() {
-        if (ytActive || ytTv.running) return;
-        pickerOpen = false;
-        ytActive = true;
-        sfx.play("off");
-        staticAmt = 0.85; toast = "SINTONIZANDO YOUTUBE…";
-        ytTv.running = true;
-        ytWait.tries = 0; ytWait.winSince = 0; ytWait.fsCount = 0; ytWait.start();
-    }
-    Process { id: ytState; command: [root.cfg + "/yt-window.sh", "state"]
-        stdout: StdioCollector { onStreamFinished: {
-            const st = text.trim();
-            if (st === "fullscreen") {
-                ytWait.winSince = 0;
-                // ya está: el cine se va (y se sigue vigilando, más tranquilo)
-                ++ytWait.fsCount;
-                // 1) estable ~1,5 s → el cine suelta el teclado (sigue tapando con estática)
-                if (ytWait.fsCount >= 5 && root.open && !root.ytReleasing && !ytShown.running && !root.ytGuide) ytShown.restart();
-                // 2) Brave sale de pantalla completa justo cuando recibe el foco: recién
-                //    cuando volvió a estar estable ~1,5 s, el cine desaparece
-                if (root.ytReleasing && ytWait.fsCount >= 5) { root.ytReleasing = false; ytGone.restart(); }
-            }
-            else if (st === "window") {
-                ytWait.fsCount = 0;
-                // pedirla (la orden ALTERNA: una vez, y otra solo si a los 3 s sigue igual)
-                if (!ytWait.winSince) ytWait.winSince = Date.now();
-                else if (Date.now() - ytWait.winSince > 400 && Date.now() - ytWait.lastFull > 3000) {
-                    ytWait.lastFull = Date.now();
-                    Quickshell.execDetached([root.cfg + "/yt-window.sh", "full"]);
-                }
-            }
-        } } }
-    Timer {
-        id: ytWait; interval: root.open || root.ytReleasing ? 300 : 1000; repeat: true
-        property int tries: 0
-        property real lastFull: 0
-        property real winSince: 0
-        property int fsCount: 0             // pantalla completa estable (3 lecturas seguidas)
-        // mientras YouTube esté abierto: si sale de pantalla completa, se la devuelve
-        onTriggered: {
-            if (++tries === 60 && root.open && !root.ytGuide) ytShown.restart();   // no llegó: igual
-            if (tries === 90 && root.ytReleasing) { root.ytReleasing = false; ytGone.restart(); }
-            if (!ytState.running) ytState.running = true;
-        }
-    }
-    // ya se ve YouTube debajo: el cine se va (sin tinte: la pantalla completa apaga el CRT)
-    property bool ytReleasing: false
-    Timer { id: ytShown; interval: 200; onTriggered: {
-        root.open = false;                       // sin teclado; la ventana sigue (estática encima)
-        root.ytReleasing = true;
-        ytWait.fsCount = 0;
-    } }
-    Timer { id: ytGone; interval: 150; onTriggered: {
-        root.toast = ""; root.staticAmt = 0;
-        Quickshell.execDetached(["hyprctl", "dispatch", "riceCursorHide(false)"]);
-        root.vanish(true);
-        ytHint.restart();
-    } }
-    // Volver de YouTube (Super+M, VIEW del joystick o la pastilla CANALES)
-    function returnFromYouTube(guide) {
-        if (open) return;
-        appearQuick(true);
-        ytGuide = guide;
-        if (guide) { pickerIndex = platforms.findIndex(p => p.id === "youtube"); pickerOpen = true; }
-        else closeYouTube();
-    }
-    function closeYouTube() {
-        ytGuide = false;
-        Quickshell.execDetached([cfg + "/yt-window.sh", "close"]);
-    }
-    // B en la guía (o elegir YouTube de nuevo): seguir en YouTube
-    function resumeYouTube() {
-        pickerOpen = false; ytGuide = false;
-        sfx.play("back");
-        staticAmt = 0.8; ytBack.restart();
-    }
-    Timer { id: ytBack; interval: 160; onTriggered: { root.staticAmt = 0; root.vanish(true); } }
-
-    // El cine aparece al toque (sin la foto del escritorio que se apaga):
-    // se usa al volver de YouTube, que si no dejaba ver el escritorio
-    function appearQuick(keepYt) {
+    // El cine aparece al toque (sin la foto del escritorio que se apaga): entrada rápida
+    function appearQuick() {
         if (open) return;
         fromConsole = false;
         libProc.running = true;
@@ -1411,8 +1226,7 @@ Item {
             break;
         case "dismiss":
             actProc.msg = "Quitada de Seguir viendo: " + (it.name ?? it.title ?? "");
-            actProc.yt = it.type === "video";
-            actProc.command = actProc.yt ? [cfg + "/youtube.py", "dismiss", it.id] : [cfg + "/stremio.py", "dismiss", it.id];
+            actProc.command = [cfg + "/stremio.py", "dismiss", it.id];
             actProc.running = true;
             sheetOpen = false;
             break;
@@ -1528,7 +1342,6 @@ Item {
     function openWebLogin(s) { webLogin.abrir(s); }
     function refreshAll() {
         libProc.running = true;
-        if (platform === "youtube") { srcCache = ({}); }
     }
     property string fiestaPreview: ""
     readonly property var fiestaList: fiestas.list
@@ -1649,7 +1462,7 @@ Item {
         playStep = "subs";
     }
     function launchVideo() {
-        playLang = { lang: "", label: "YouTube" }; playSubs = false;
+        playLang = { lang: "", label: "Tráiler" }; playSubs = false;
         playStep = "load";
         playMsg = "SINTONIZANDO…";
         playStats = { peers: 0, speed: 0, progress: 0 };
@@ -1814,10 +1627,6 @@ Item {
             else playStep = "";
         }
         libProc.running = true;
-        if (play?.item.type === "video") {
-            const c = Object.assign({}, srcCache); delete c["youtube|continue|"]; srcCache = c;
-            requestSrc("youtube|continue|");
-        }
         stage.forceActiveFocus();
         // serie terminada: siguiente episodio con cuenta regresiva
         if (end?.finished && play?.item.type === "series") {
@@ -1849,7 +1658,7 @@ Item {
 
     // Controles: aparecen con cualquier tecla o movimiento, se van solos
     // Volumen: en la PC hasta 130 % (mpv); en la tele 0-100 % es el de la tele
-    // y de 101 a 300 % es refuerzo (player.py → ffmpeg de Stremio). YouTube en la tele: hasta 100.
+    // y de 101 a 300 % es refuerzo (player.py → ffmpeg de Stremio). Tráileres en la tele: hasta 100.
     function volMax() { return !casting ? 130 : play?.item.type === "video" ? 100 : 300; }
     property bool volFlash: false
     Timer { id: volFlashOff; interval: 1800; onTriggered: root.volFlash = false }
@@ -2390,7 +2199,7 @@ Item {
         Item {
             id: backdrop
             anchors.fill: parent
-            visible: stage.visible && !root.playFull && root.platform !== "youtube"
+            visible: stage.visible && !root.playFull
 
             opacity: root.uiIn
             property string src: root.current?.background ?? ""
@@ -2504,8 +2313,6 @@ Item {
                     GradientStop { position: 1.0;  color: "black" }
                 }
             }
-
-            YtAccount { anchors.fill: parent; cine: root; opacity: root.uiIn }
 
             // ── Interfaz ──────────────────────────────────────────────────
             Item {
@@ -2646,7 +2453,7 @@ Item {
                 // ── Ficha del título elegido ──────────────────────────────
                 Column {
                     id: hero
-                    visible: root.platform !== "youtube" && root.tab !== "letterboxd"
+                    visible: root.tab !== "letterboxd"
                     anchors { left: parent.left; leftMargin: 90; bottom: rowsView.top; bottomMargin: 34 }
                     width: parent.width * 0.46
                     spacing: 14
@@ -2714,8 +2521,7 @@ Item {
                     id: rowsView
                     visible: root.tab !== "letterboxd"
                     anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                    // en YouTube, al bajar, ocupan el lugar de tu cuenta
-                    height: root.ytCollapsed ? parent.height - 150 : parent.height * 0.47
+                    height: parent.height * 0.47
                     Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                     clip: true
                     interactive: false
@@ -3100,7 +2906,7 @@ Item {
                                 }
                                 Text {
                                     anchors { right: parent.right; rightMargin: 26; verticalCenter: parent.verticalCenter }
-                                    text: parent.modelData.kana + (parent.modelData.id === (root.ytGuide ? "youtube" : root.platform) ? "   ● EN EL AIRE" : "")
+                                    text: parent.modelData.kana + (parent.modelData.id === root.platform ? "   ● EN EL AIRE" : "")
                                     font.family: root.sans; font.pixelSize: 17
                                     color: parent.modelData.colors.dim
                                 }

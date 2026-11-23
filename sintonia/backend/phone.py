@@ -88,7 +88,6 @@ CHANNELS = [
     {"id": "max", "ch": "04", "name": "MAX", "kana": "白", "bg": "#050505", "deep": "#141416", "line": "#3a3a3e", "dim": "#9a9aa0", "fg": "#ececE8", "hi": "#ffffff", "warn": "#ff6a5a"},
     {"id": "prime", "ch": "05", "name": "PRIME VIDEO", "kana": "青", "bg": "#010a0b", "deep": "#051d20", "line": "#145055", "dim": "#5bbcc0", "fg": "#c8f9f5", "hi": "#effffd", "warn": "#ffb35a"},
     {"id": "crunchyroll", "ch": "06", "name": "CRUNCHYROLL", "kana": "アニメ", "bg": "#0c0601", "deep": "#241204", "line": "#6a3410", "dim": "#d08a4a", "fg": "#ffdcbc", "hi": "#fff3e8", "warn": "#ff5a8a"},
-    {"id": "youtube", "ch": "07", "name": "YOUTUBE", "kana": "動画", "bg": "#0d0101", "deep": "#2a0505", "line": "#6e1414", "dim": "#e2665e", "fg": "#ffd8d4", "hi": "#ffffff", "warn": "#ffd25a"},
 ]
 STREMIO_HOME = [
     ("TOP 10 EN EL MUNDO · PELÍCULAS", "top10", "movie", ""), ("TOP 10 EN EL MUNDO · SERIES", "top10", "series", ""),
@@ -111,7 +110,7 @@ _cache, _clock = {}, threading.Lock()
 
 
 def tool(script, *args, ttl=600, timeout=90):
-    """Corre stremio.py / youtube.py y guarda la respuesta un rato."""
+    """Corre stremio.py y guarda la respuesta un rato."""
     key = (script,) + args
     with _clock:
         hit = _cache.get(key)
@@ -138,25 +137,6 @@ def lite(it):
 def rows_for(ch, tab):
     R = []
     add = lambda t, items, mn=1: R.append({"title": t, "items": [lite(x) for x in (items or [])[:40]]}) if items and len(items) >= mn else None
-    if ch == "youtube":
-        if tab == "subs":
-            add("LO ÚLTIMO DE TUS SUSCRIPCIONES", tool("youtube.py", "feed", "subs"))
-        elif tab == "you":
-            add("SEGUIR VIENDO", tool("youtube.py", "continue", ttl=0))
-            add("VER MÁS TARDE", tool("youtube.py", "feed", "later"))
-            add("HISTORIAL", tool("youtube.py", "feed", "history"))
-            add("VIDEOS QUE TE GUSTARON", tool("youtube.py", "feed", "liked"))
-        else:
-            add("SEGUIR VIENDO", tool("youtube.py", "continue", ttl=0))
-            h = tool("youtube.py", "home", ttl=1200, timeout=120) or {}
-            add("PARA VOS", h.get("forYou"))
-            bec, shelves = h.get("because") or [], h.get("shelves") or []
-            for i, sh in enumerate(shelves):
-                if i % 2 == 0 and i // 2 < len(bec):
-                    add(bec[i // 2]["title"].upper(), bec[i // 2]["items"])
-                add(sh["title"].upper(), sh["items"])
-            add("MÁS PARA VOS", h.get("more"))
-        return [r for r in R if r]
     lib = tool("stremio.py", "library", ttl=30) or {}
     if ch == "stremio":
         if tab == "home":
@@ -255,7 +235,7 @@ def start_play(b):
     if it.get("type") == "video":
         job = {"type": "video", "id": it["id"], "videoId": it["id"], "name": it.get("name", ""), "channel": it.get("channel", ""),
                "start": start}
-        lang = {"lang": "", "label": "YouTube"}
+        lang = {"lang": "", "label": "Tráiler"}
     else:
         lang = {"lang": b.get("lang", ""), "label": b.get("langLabel", "")}
         job = {"type": it["type"], "id": it["id"], "videoId": b.get("videoId") or it["id"], "name": it.get("name", ""),
@@ -330,7 +310,7 @@ def handle(req, method):
     if api == "rows":
         return send_json(req, {"rows": rows_for(q.get("ch", "stremio"), q.get("tab", "home"))})
     if api == "search":
-        r = tool("youtube.py" if q.get("ch") == "youtube" else "stremio.py", "search", q.get("q", ""))
+        r = tool("stremio.py", "search", q.get("q", ""))
         items = r if isinstance(r, list) else ((r or {}).get("metas") or (r or {}).get("items") or [])
         return send_json(req, {"items": [lite(x) for x in items[:40]]})
     if api == "meta":

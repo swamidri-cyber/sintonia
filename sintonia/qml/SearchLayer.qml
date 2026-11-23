@@ -11,7 +11,7 @@ Item {
     readonly property int resCols: Math.max(1, Math.floor(resGrid.width / resGrid.cellWidth))
     readonly property alias grid: resGrid           // para las zonas sin filtro (los pósters)
     visible: cine.searchActive
-    readonly property bool wide: cine.platform === "youtube"     // miniaturas apaisadas
+    readonly property bool wide: false
 
     function focusField() { field.forceActiveFocus(); }
     function setField(q) { if (field.text !== q) field.text = q; }
@@ -63,7 +63,7 @@ Item {
         spacing: 26
 
         Text {
-            text: sl.cine.tab === "letterboxd" && sl.cine.platform !== "youtube" ? "BUSCAR  ·  EN TU WATCHLIST DE LETTERBOXD"
+            text: sl.cine.tab === "letterboxd" ? "BUSCAR  ·  EN TU WATCHLIST DE LETTERBOXD"
                 : "BUSCAR" + (sl.cine.platform !== "stremio" ? "  ·  EN " + sl.cine.plat.name + " Y TODO STREMIO" : "")
             font.family: sl.cine.mono; font.pixelSize: 15; font.letterSpacing: 4
             color: sl.th.dim

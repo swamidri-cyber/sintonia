@@ -258,8 +258,7 @@ const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const fmt = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
                    return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
 let S = { channels: [], casts: [], prefs: {}, ch: "stremio", tab: "home", item: null, meta: null, season: null, now: null };
-const TABS = { youtube: [["home", "INICIO"], ["subs", "SUSCRIPCIONES"], ["you", "TÚ"]],
-               default: [["home", "INICIO"], ["movie", "PELÍCULAS"], ["series", "SERIES"]] };
+const TABS = { default: [["home", "INICIO"], ["movie", "PELÍCULAS"], ["series", "SERIES"]] };
 const GENRE_ES = { Action: "Acción", Adventure: "Aventura", Animation: "Animación", Comedy: "Comedia", Crime: "Policial",
   Documentary: "Documental", Drama: "Drama", Family: "Familiar", Fantasy: "Fantasía", Horror: "Terror", Mystery: "Misterio",
   Romance: "Romance", "Sci-Fi": "Ciencia ficción", Thriller: "Suspenso", War: "Bélica", History: "Historia", Biography: "Biografía" };
@@ -312,7 +311,7 @@ function renderTabs() {
 }
 function card(it) {
   const c = el("button", "card");
-  const img = S.ch === "youtube" || it.type === "video" ? it.poster : (it.background || it.poster);
+  const img = it.type === "video" ? it.poster : (it.background || it.poster);
   if (img) c.style.backgroundImage = `url("${img}")`;
   c.appendChild(el("div", "t", esc(it.name)));
   if (it.progress > 0.01 && it.progress < 0.97) { const p = el("div", "p"); p.style.width = (it.progress * 100) + "%"; c.appendChild(p); }
@@ -347,7 +346,7 @@ $("#q").oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(doSearch, 45
 async function doSearch() {
   const q = $("#q").value.trim(); if (q.length < 2) return;
   const box = $("#rows"); box.innerHTML = '<div class="loading">BUSCANDO…</div>';
-  const d = await api(`search?ch=${S.ch === "youtube" ? "youtube" : "stremio"}&q=${encodeURIComponent(q)}`);
+  const d = await api(`search?ch=stremio&q=${encodeURIComponent(q)}`);
   box.innerHTML = ""; const g = el("div", "grid"); d.items.forEach(it => g.appendChild(card(it))); box.appendChild(g);
   if (!d.items.length) box.innerHTML = '<div class="loading">NADA CON ESE NOMBRE</div>';
 }

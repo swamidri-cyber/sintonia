@@ -1,4 +1,4 @@
-// Iniciar sesión en YouTube o Letterboxd con el navegador de adentro de la app.
+// Iniciar sesión en Letterboxd con el navegador de adentro de la app.
 // Cuando aparecen las cookies de sesión del sitio, se guardan y se cierra sola.
 // Esc (o B del joystick) cancela.
 import QtQuick
@@ -11,7 +11,7 @@ Item {
     readonly property var th: cine.theme
     property string servicio: ""            // "" = cerrada
     readonly property bool open: servicio !== ""
-    readonly property string nombre: servicio === "youtube" ? "YOUTUBE" : servicio === "letterboxd" ? "LETTERBOXD" : ""
+    readonly property string nombre: servicio === "letterboxd" ? "LETTERBOXD" : ""
     signal listo(string servicio, string usuario)
     visible: open
 

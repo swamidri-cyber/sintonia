@@ -549,8 +549,8 @@ def main():
     want_subs = bool(job.get("subs"))
     start = float(job.get("start") or 0)
 
-    if job.get("type") == "video":
-        youtube(job)
+    if job.get("type") == "video":       # tráiler (de YouTube, con yt-dlp)
+        trailer(job)
         return
     if job.get("type") == "archivo":      # un video de la compu: sin Stremio ni cuenta
         args = ["mpv", job["url"], "--keep-open=yes", "--no-osc", "--osd-level=0", "--save-position-on-quit=no",
@@ -743,7 +743,7 @@ def test_mode():
 
 
 # ── Progreso: se guarda pase lo que pase ────────────────────────────────────
-#  Cada guardado se anota primero en PENDING y se borra cuando Stremio/YouTube
+#  Cada guardado se anota primero en PENDING y se borra cuando Stremio
 #  confirman; lo que quede (sin red, Stremio caído, PC apagada a mitad) se
 #  reintenta en el próximo arranque del reproductor.
 PENDING = os.path.join(STATE, "pending-progress.json")
@@ -766,12 +766,10 @@ def _pending(update):
 
 def _send_progress(rec):
     here = os.path.dirname(os.path.abspath(__file__))
-    if rec["type"] == "video":
-        cmd = [sys.executable, os.path.join(here, "youtube.py"), "progress", rec["id"], str(rec["pos"]),
-               str(rec["dur"]), rec.get("name", ""), rec.get("channel", "")]
-    else:
-        cmd = [sys.executable, os.path.join(here, "stremio.py"), "progress", rec["type"], rec["id"], rec["videoId"],
-               str(int(rec["pos"] * 1000)), str(int(rec["dur"] * 1000)), "1" if rec["finished"] else "0"]
+    if rec["type"] == "video":           # restos de cuando había canal de YouTube: se descartan
+        return True
+    cmd = [sys.executable, os.path.join(here, "stremio.py"), "progress", rec["type"], rec["id"], rec["videoId"],
+           str(int(rec["pos"] * 1000)), str(int(rec["dur"] * 1000)), "1" if rec["finished"] else "0"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         return r.returncode == 0 and '"error"' not in r.stdout
@@ -1282,11 +1280,22 @@ def run_cast(job, chosen, sub_ext, sub_key, start, sid_inband):
     emit(ev="ended", pos=st["pos"], dur=st["dur"], finished=finished)
 
 
+def ytdlp_cmd():
+    """yt-dlp: el de la app (módulo de Python), o uno instalado."""
+    import shutil
+    try:
+        import yt_dlp  # noqa: F401
+        return lugares.python(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp.py"))
+    except ImportError:
+        pass
+    p = os.path.expanduser("~/.local/bin/yt-dlp")
+    return [p if os.path.exists(p) else (shutil.which("yt-dlp") or "yt-dlp")]
+
+
 def youtube_urls(vid):
     """yt-dlp → (video, audio, encabezados HTTP) hasta 1080p, sin AV1."""
-    import youtube as yt
     fmt = "bv*[height<=1080][vcodec!*=av01]+ba/bv*[height<=1080]+ba/b"
-    r = subprocess.run(yt.YTDLP_CMD + ["-J", "--no-warnings", "--no-playlist", "-f", fmt,
+    r = subprocess.run(ytdlp_cmd() + ["-J", "--no-warnings", "--no-playlist", "-f", fmt,
                                        "https://www.youtube.com/watch?v=" + vid],
                        capture_output=True, text=True, timeout=120)
     if r.returncode != 0 or not r.stdout.strip():
@@ -1299,22 +1308,21 @@ def youtube_urls(vid):
     return video, audio, hdr
 
 
-def youtube(job):
-    """YouTube: yt-dlp saca las direcciones y mpv las abre, hasta 1080p."""
+def trailer(job):
+    """Tráiler (está en YouTube): yt-dlp saca las direcciones y mpv las abre, hasta 1080p."""
     vid = job["id"].removeprefix("yt:")
-    emit(ev="status", msg="SINTONIZANDO YOUTUBE…")
+    emit(ev="status", msg="SINTONIZANDO EL TRÁILER…")
     if job.get("target"):
-        run_cast(job, {"s": {"title": "YouTube", "res": 1080, "hash": ""}, "url": ""}, None, "", float(job.get("start") or 0), None)
+        run_cast(job, {"s": {"title": "Tráiler", "res": 1080, "hash": ""}, "url": ""}, None, "", float(job.get("start") or 0), None)
         return
-    # sin la sesión: con las cookies YouTube contesta "The page needs to be
-    # reloaded" y no deja bajar el video (la sesión solo sirve para las listas)
+    # sin cookies: con la sesión YouTube contesta "The page needs to be reloaded"
     try:
         video, audio, hdr = youtube_urls(vid)
     except Exception as e:
-        emit(ev="error", msg="YouTube: " + str(e)[:150])
+        emit(ev="error", msg="Tráiler: " + str(e)[:150])
         return
     args = ["mpv", video, "--keep-open=yes", "--save-position-on-quit=no", "--no-resume-playback", "--sid=no",
-            "--force-media-title=" + job.get("name", "YouTube")]
+            "--force-media-title=" + job.get("name", "Tráiler")]
     if audio:
         args.append("--audio-file=" + audio)
     for k, v in (hdr or {}).items():       # (las listas de mpv se cortan en las comas: el UA va aparte)
@@ -1325,7 +1333,7 @@ def youtube(job):
     start = float(job.get("start") or 0)
     if start > 5:
         args.append(f"--start={start:.0f}")
-    run_mpv(job, args, {"s": {"title": "YouTube", "res": 1080, "hash": ""}, "url": ""}, None, "", start)
+    run_mpv(job, args, {"s": {"title": "Tráiler", "res": 1080, "hash": ""}, "url": ""}, None, "", start)
 
 
 def run_mpv(job, args, chosen, sub_ext, sub_key, start):
