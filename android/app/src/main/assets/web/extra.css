@@ -1,0 +1,50 @@
+/* SINTONÍA en el celular: lo que suma a la estética del control remoto */
+html, body { height: 100%; }
+.top .grow { min-width: 0; }
+.iconbtn { flex: none; }
+
+/* estática de tele (cambio de canal y encendido) */
+#static { position: fixed; inset: 0; z-index: 95; pointer-events: none; opacity: 0; width: 100%; height: 100%; }
+#osd { position: fixed; z-index: 96; top: calc(var(--safe-t) + 18px); right: 18px; font-family: Mono; font-size: 34px;
+       color: #8cff7a; text-shadow: 0 0 12px #3f3, 0 0 2px #fff; pointer-events: none; opacity: 0; transition: opacity .25s; }
+#osd.on { opacity: 1; }
+#bars { position: fixed; inset: 0; z-index: 94; display: flex; pointer-events: none; opacity: 0; transition: opacity .3s; }
+#bars i { flex: 1; }
+#bars.on { opacity: 1; }
+#placa { position: fixed; inset: 0; z-index: 97; background: #000; display: flex; flex-direction: column; justify-content: center;
+         padding: 0 26px; pointer-events: none; opacity: 0; transition: opacity .35s; }
+#placa.on { opacity: 1; }
+#placa .l1 { font-family: Eva; font-weight: 700; color: #fff; font-size: 64px; line-height: .9; transform: scaleX(.72); transform-origin: left; }
+#placa .l2 { font-family: Eva; font-weight: 700; color: #fff; font-size: 30px; transform: scaleX(.72); transform-origin: left; margin-top: 10px; }
+#placa .l3 { font-family: Mono; font-size: 12px; letter-spacing: .3em; color: #e33; margin-top: 18px; }
+
+/* ficha */
+.sheet { -webkit-overflow-scrolling: touch; }
+.btns2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btns2 .btn { font-size: 12px; }
+.cast { font-size: 13px; color: var(--dim); margin-top: 12px; line-height: 1.5; }
+
+/* configuración */
+.cfg { padding: calc(var(--safe-t) + 70px) 18px calc(40px + var(--safe-b)); }
+.cfg h2 { font-family: Mono; font-size: 13px; letter-spacing: .2em; color: var(--dim); margin: 26px 0 6px; font-weight: 400; }
+.cfg .who { font-size: 15px; color: var(--fg); margin: 6px 0; line-height: 1.4; }
+.cfg .who b { color: var(--hi); }
+.cfg .note { font-size: 13px; color: var(--dim); line-height: 1.45; margin-top: 6px; }
+.field { width: 100%; height: 54px; border-radius: 27px; border: 2px solid var(--line); background: transparent; color: var(--hi);
+         padding: 0 22px; font: 600 17px Sans; outline: none; margin-top: 10px; -webkit-user-select: text; user-select: text; }
+.field:focus { border-color: var(--hi); }
+.seg { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.err { color: var(--warn); font-size: 14px; margin-top: 8px; }
+
+/* reseña */
+.stars { display: flex; gap: 6px; margin: 18px 0 6px; }
+.stars button { font-size: 44px; line-height: 1; color: var(--line); position: relative; width: 50px; }
+.stars button.on { color: var(--hi); }
+.stars button.half { background: linear-gradient(90deg, var(--hi) 50%, var(--line) 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+textarea.field { height: 140px; border-radius: 22px; padding: 16px 20px; resize: none; font-weight: 400; line-height: 1.4; }
+.toggles { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+/* lista vacía / bienvenida */
+.hola { padding: 30px 18px; }
+.hola .eva { font-size: 46px; color: var(--hi); }
+.hola p { font-size: 16px; line-height: 1.5; color: var(--fg); }

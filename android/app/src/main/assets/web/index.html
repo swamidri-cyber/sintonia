@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#07020c">
+<title>SINTONÍA</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="extra.css">
+</head>
+<body>
+
+<!-- Inicio -->
+<section id="app">
+  <header>
+    <div class="top">
+      <span class="live"></span>
+      <div class="grow">
+        <div class="ch mono" id="chNum">CH 01 · 初号機</div>
+        <div class="name eva" id="chName">STREMIO</div>
+      </div>
+      <button class="iconbtn" id="searchBtn" aria-label="Buscar">󰍉</button>
+      <button class="iconbtn" id="cfgBtn" aria-label="Configuración">≡</button>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="tabs" id="tabs"></div>
+  </header>
+  <div id="searchBox" class="search hidden"><input id="q" type="search" placeholder="Buscar películas y series…" enterkeyhint="search"></div>
+  <main id="rows"></main>
+</section>
+
+<!-- Ficha -->
+<section id="sheet" class="sheet">
+  <button class="iconbtn close" id="sheetClose">✕</button>
+  <div class="hero" id="hero"></div>
+  <div class="info" id="info"></div>
+</section>
+
+<!-- Configuración -->
+<section id="cfg" class="sheet">
+  <button class="iconbtn close" id="cfgClose">✕</button>
+  <div class="cfg" id="cfgBox"></div>
+</section>
+
+<!-- Reseña de Letterboxd -->
+<section id="review" class="sheet">
+  <button class="iconbtn close" id="rvClose">✕</button>
+  <div class="cfg" id="rvBox"></div>
+</section>
+
+<!-- Elegir -->
+<div id="pick" class="pick hidden"><div class="box" id="pickBox"></div></div>
+
+<div id="toast" class="toast hidden"></div>
+<div id="bars"></div>
+<canvas id="static"></canvas>
+<div id="osd" class="mono"></div>
+<div id="placa"><div class="l1">SINTONÍA</div><div class="l2" id="placaCh">第壱話 · STREMIO</div><div class="l3">同調 · EN EL AIRE</div></div>
+
+<script src="stremio.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
