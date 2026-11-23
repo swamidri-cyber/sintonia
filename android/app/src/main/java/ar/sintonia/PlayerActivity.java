@@ -128,51 +128,42 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
     /** Menú aparte para correr los subtítulos (±0,1 · ±0,5 · ±1 s). */
     private void armarSync(FrameLayout root) {
         FrameLayout fondo = new FrameLayout(this);
-        fondo.setBackgroundColor(Color.argb(120, 0, 0, 0));
+        fondo.setBackgroundColor(Color.argb(150, 0, 0, 0));
         fondo.setVisibility(View.GONE);
         fondo.setOnClickListener(v -> cerrarSync());
         LinearLayout p = new LinearLayout(this);
         p.setOrientation(LinearLayout.VERTICAL);
         p.setGravity(Gravity.CENTER_HORIZONTAL);
-        p.setPadding(dp(26), dp(20), dp(26), dp(20));
+        p.setPadding(dp(28), dp(22), dp(28), dp(22));
         GradientDrawable g = new GradientDrawable();
         g.setCornerRadius(dp(26));
-        g.setColor(Color.argb(225, 10, 6, 16));
+        g.setColor(Color.argb(235, 10, 6, 16));
         g.setStroke(dp(1.5f), Color.argb(90, 255, 255, 255));
         p.setBackground(g);
         p.setClickable(true);
-        TextView t = texto(12, mono, theme);
-        t.setLetterSpacing(0.2f);
+
+        TextView t = texto(13, mono, theme);
+        t.setLetterSpacing(0.22f);
         t.setText("SINCRONIZAR SUBTÍTULOS");
         t.setGravity(Gravity.CENTER);
         p.addView(t, new LinearLayout.LayoutParams(-1, -2));
+
+        // una sola línea: ← antes  [valor]  después →
+        LinearLayout fila = new LinearLayout(this);
+        fila.setGravity(Gravity.CENTER_VERTICAL);
+        fila.setPadding(0, dp(18), 0, dp(6));
+        fila.addView(lado(new double[]{-1, -0.5, -0.1}, "‹  SALEN ANTES", Gravity.START));
         syncVal = texto(34, mono, Color.WHITE);
-        syncVal.setPadding(0, dp(6), 0, dp(2));
         syncVal.setGravity(Gravity.CENTER);
-        p.addView(syncVal, new LinearLayout.LayoutParams(-1, -2));
-        TextView h = texto(12, Typeface.DEFAULT, Color.argb(190, 255, 255, 255));
-        h.setGravity(Gravity.CENTER);
-        h.setText("¿El subtítulo sale antes que la voz? Tocá +.  ¿Sale después? Tocá −.");
-        h.setPadding(0, 0, 0, dp(12));
-        p.addView(h);
-        double[][] filas = {{-1, -0.5, -0.1}, {0.1, 0.5, 1}};
-        for (double[] f : filas) {
-            LinearLayout r = new LinearLayout(this);
-            r.setGravity(Gravity.CENTER);
-            for (double d : f) {
-                String l = (d > 0 ? "+" : "−") + (Math.abs(d) == 1 ? "1" : String.valueOf(Math.abs(d)).replace(".", ",")) + " S";
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(104), -2);
-                lp.setMargins(dp(5), dp(5), dp(5), dp(5));
-                TextView b = boton(l, v -> delay(d));
-                r.addView(b, lp);
-            }
-            p.addView(r);
-        }
+        fila.addView(syncVal, new LinearLayout.LayoutParams(dp(170), -2));
+        fila.addView(lado(new double[]{0.1, 0.5, 1}, "SALEN DESPUÉS  ›", Gravity.END));
+        p.addView(fila);
+
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER);
-        r.setPadding(0, dp(8), 0, 0);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-        lp.setMargins(dp(5), 0, dp(5), 0);
+        r.setPadding(0, dp(14), 0, 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(150), -2);
+        lp.setMargins(dp(8), 0, dp(8), 0);
         r.addView(boton("VOLVER A 0", v -> delay(-subDelay)), lp);
         TextView listo = boton("LISTO", v -> cerrarSync());
         GradientDrawable gl = new GradientDrawable();
@@ -182,10 +173,32 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         listo.setTextColor(Color.BLACK);
         r.addView(listo, lp);
         p.addView(r);
+
         fondo.addView(p, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         root.addView(fondo, new FrameLayout.LayoutParams(-1, -1));
         syncPanel = fondo;
         pintarSync();
+    }
+
+    /** Tres botones iguales con su rótulo debajo (un lado del menú de sincronizar). */
+    private LinearLayout lado(double[] pasos, String rotulo, int alin) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout bs = new LinearLayout(this);
+        for (double d : pasos) {
+            String l = (d > 0 ? "+" : "−") + (Math.abs(d) == 1 ? "1" : String.valueOf(Math.abs(d)).replace(".", ",")) + " S";
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(92), -2);
+            lp.setMargins(dp(4), 0, dp(4), 0);
+            bs.addView(boton(l, v -> delay(d)), lp);
+        }
+        col.addView(bs);
+        TextView r = texto(11, mono, Color.argb(170, 255, 255, 255));
+        r.setLetterSpacing(0.16f);
+        r.setText(rotulo);
+        r.setGravity(alin);
+        r.setPadding(dp(6), dp(10), dp(6), 0);
+        col.addView(r, new LinearLayout.LayoutParams(-1, -2));
+        return col;
     }
 
     private void pintarSync() {
@@ -290,7 +303,6 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         subBtn = boton("SUBTÍTULOS", v -> toggleSubs());
         row.addView(subBtn, lp);
         row.addView(boton("SINCRONIZAR", v -> abrirSync()), lp);
-        row.addView(boton("AUDIO", v -> cicloAudio()), lp);
         row.addView(boton("OTRA FUENTE", v -> { avisar("CAMBIANDO DE FUENTE…"); siguiente(); }), lp);
         c.addView(row);
         controls = c;
@@ -586,12 +598,6 @@ public class PlayerActivity extends Activity implements MPVLib.EventObserver, Su
         pintarSync();
     }
 
-    private void cicloAudio() {
-        cmd("cycle", "audio");
-        String l = MPVLib.getPropertyString("current-tracks/audio/lang");
-        String t = MPVLib.getPropertyString("current-tracks/audio/title");
-        avisar("AUDIO · " + (t != null ? t : l != null ? l : "?").toUpperCase());
-    }
 
     // ── Guardar y salir ─────────────────────────────────────────────────────
     private void guardar(boolean finished, boolean close) {

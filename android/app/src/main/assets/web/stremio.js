@@ -133,6 +133,21 @@ async function catalogs(keys, onEach) {
   }));
   return res;
 }
+// Igual que search pero avisa apenas llega cada parte (películas o series)
+const BUSQ = new Map();
+async function searchRapido(q, onParte) {
+  const key = q.toLowerCase();
+  if (BUSQ.has(key)) { onParte(BUSQ.get(key)); return BUSQ.get(key); }
+  const qq = encodeURIComponent(q), partes = { movie: null, series: null };
+  const mezclar = () => {
+    const a = partes.movie || [], b = partes.series || [], out = [];
+    for (let i = 0; i < Math.max(a.length, b.length); i++) { if (a[i]) out.push(a[i]); if (b[i]) out.push(b[i]); }
+    return out.filter(m => m.name).map(normMeta);
+  };
+  await Promise.all(["movie", "series"].map(t => getJSON(`${CINEMETA}/catalog/${t}/top/search=${qq}.json`, 86400, 12000)
+    .then(d => { partes[t] = d.metas || []; onParte(mezclar()); }).catch(() => { partes[t] = []; })));
+  const r = mezclar(); BUSQ.set(key, r); return r;
+}
 async function search(q) {
   const qq = encodeURIComponent(q);
   const [a, b] = await Promise.all(["movie", "series"].map(t => getJSON(`${CINEMETA}/catalog/${t}/top/search=${qq}.json`, 3600).then(d => d.metas || []).catch(() => [])));
@@ -315,3 +330,43 @@ const Letterboxd = {
     return { user: f.user, film: f.name, url: f.url };
   },
 };
+
+// ── Ficha completa: español, reparto con fotos y parecidas ──────────────────
+const TMDB_ES = "https://tmdb.elfhosted.com/" + encodeURIComponent('{"language":"es-MX"}');
+async function tmdbEs(type, id) {
+  const m = (await getJSON(`${TMDB_ES}/meta/${type}/${id}.json`, 3 * 86400, 15000)).meta || {};
+  const cast = ((m.app_extras || {}).cast || []).filter(c => !/uncredited/i.test(c.character || ""))
+    .slice(0, 16).map(c => ({ name: c.name || "", character: c.character || "", photo: c.photo || "" }));
+  return { description: m.description || "", nameEs: m.name || "", cast,
+           director: m.director || [], trailer: ((m.trailerStreams || []).find(t => t.ytId) || {}).ytId || "" };
+}
+// "Título (Año)" de Letterboxd → título de Cinemeta (por nombre y año)
+async function resolver(nombre, type) {
+  const m = /^(.*)\s\((\d{4})\)$/.exec(nombre), titulo = m ? m[1] : nombre, anio = m ? m[2] : "";
+  const d = await getJSON(`${CINEMETA}/catalog/${type}/top/search=${encodeURIComponent(titulo)}.json`, 7 * 86400, 12000).catch(() => ({}));
+  const l = (d.metas || []).filter(x => x.name);
+  const norm = s => String(s).toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "");
+  const hit = l.find(x => norm(x.name) === norm(titulo) && String(x.releaseInfo || x.year || "").startsWith(anio))
+           || l.find(x => anio && String(x.releaseInfo || x.year || "").startsWith(anio))
+           || (anio ? null : l[0]);
+  return hit ? normMeta(hit) : null;
+}
+// Parecidas: lo que en Letterboxd ve la misma gente (películas); series: más del mismo género
+async function similares(type, id, genres) {
+  if (type === "movie" && String(id).startsWith("tt")) {
+    try {
+      const r = await req({ url: `${LB}/imdb/${id}/`, cookies: true, ttl: 7 * 86400 });
+      const h = r.body || "", i = h.indexOf("Similar Films");
+      if (i >= 0) {
+        const nombres = [...new Set([...h.slice(i, i + 30000).matchAll(/data-item-name="([^"]+)"/g)].map(x => x[1].replace(/&amp;/g, "&").replace(/&#039;/g, "'")))];
+        const res = (await Promise.all(nombres.slice(0, 14).map(n => resolver(n, "movie").catch(() => null))))
+          .filter(x => x && x.id !== id);
+        if (res.length >= 3) return { title: "PARECIDAS", items: res };
+      }
+    } catch (e) {}
+  }
+  const g = (genres || [])[0];
+  if (!g) return { title: "", items: [] };
+  const l = (await fetchCatalog("stremio", type, "0", g).catch(() => [])).filter(x => x.id !== id).slice(0, 20);
+  return { title: "", genre: g, items: l };
+}

@@ -197,13 +197,21 @@ function imgs(it) {
   const l = [...new Set([it.background, it.background0, it.poster, it.poster0].filter(Boolean))];
   return l.map(u => `url("${u}")`).join(", ");
 }
+// Las imágenes se piden recién cuando la tarjeta está por verse (las de pantalla primero)
+const ojo = new IntersectionObserver(es => {
+  for (const e of es) if (e.isIntersecting) { e.target.style.backgroundImage = e.target.dataset.bg; ojo.unobserve(e.target); }
+}, { rootMargin: "250px 400px" });
+const verCuando = c => { if (c.dataset.bg) ojo.observe(c); };
+const VISTOS = new Map();       // todo título que pasó por pantalla: la búsqueda lo encuentra al instante
 function card(it) {
+  if (it && it.id && it.name && !VISTOS.has(it.id)) VISTOS.set(it.id, it);
   const c = el("button", "card");
-  c.style.backgroundImage = imgs(it);
+  c.dataset.bg = imgs(it); verCuando(c);
   c.appendChild(el("div", "t", esc(it.name)));
   if (it.progress > 0.01 && it.progress < 0.97) { const p = el("div", "p"); p.style.width = (it.progress * 100) + "%"; c.appendChild(p); }
   if (it.type === "series") c.appendChild(el("div", "badge", "SERIE"));
   c.onclick = () => { vibe(); openSheet(it); };
+  c.addEventListener("pointerdown", () => ficha(it), { passive: true });
   return c;
 }
 
@@ -307,7 +315,31 @@ function cardBq(it) {
   return c;
 }
 let bqReq = 0, qTimer = null;
-$("#q").oninput = () => { $("#qClear").classList.toggle("hidden", !$("#q").value); BQ.genero = null; clearTimeout(qTimer); qTimer = setTimeout(renderBuscar, 380); };
+$("#q").oninput = () => {
+  $("#qClear").classList.toggle("hidden", !$("#q").value); BQ.genero = null;
+  locales();                                   // al toque, con lo que ya está en la app
+  clearTimeout(qTimer); qTimer = setTimeout(renderBuscar, 180);
+};
+const sinTildes = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function buscarLocal(q) {
+  const n = sinTildes(q), out = [];
+  for (const it of VISTOS.values()) if (sinTildes(it.name).includes(n)) out.push(it);
+  // primero los que empiezan con lo escrito
+  return out.sort((a, b) => (sinTildes(b.name).startsWith(n) ? 1 : 0) - (sinTildes(a.name).startsWith(n) ? 1 : 0)).slice(0, 30);
+}
+function locales() {
+  const q = $("#q").value.trim();
+  if (q.length < 2) return;
+  const l = buscarLocal(q).filter(x => BQ.tipo === "all" || x.type === BQ.tipo);
+  pintarResultados(l, true);
+}
+function pintarResultados(items, buscando) {
+  const box = $("#bqBody");
+  box.innerHTML = "";
+  box.appendChild(el("div", "bqH", `<span>${buscando ? "BUSCANDO…" : "RESULTADOS · " + items.length}</span>`));
+  if (!items.length) { if (!buscando) box.appendChild(el("div", "loading", "NADA CON ESE NOMBRE")); return; }
+  const g = el("div", "grid"); items.forEach(it => g.appendChild(cardBq(it))); const w = el("div", "bqRes"); w.appendChild(g); box.appendChild(w);
+}
 $("#q").onkeydown = e => { if (e.key === "Enter") { recordar($("#q").value); $("#q").blur(); } };
 $("#qClear").onclick = () => { $("#q").value = ""; $("#qClear").classList.add("hidden"); renderBuscar(); $("#q").focus(); };
 async function renderBuscar() {
@@ -322,9 +354,11 @@ async function renderBuscar() {
     const g = el("div", "grid"); items.forEach(it => g.appendChild(cardBq(it))); const w = el("div", "bqRes"); w.appendChild(g); box.appendChild(w);
   };
   if (q.length >= 2) {
-    box.innerHTML = '<div class="loading">BUSCANDO…</div>';
-    const items = filtro(await search(q).catch(() => []));
-    if (n === bqReq) grilla(`RESULTADOS · ${items.length}`, items, "NADA CON ESE NOMBRE");
+    const loc = filtro(buscarLocal(q));
+    const unir = rem => { const ids = new Set(rem.map(x => x.id)); return filtro(rem).concat(loc.filter(x => !ids.has(x.id))); };
+    if (!box.querySelector(".bqRes")) pintarResultados(loc, true);
+    const items = await searchRapido(q, parte => { if (n === bqReq) pintarResultados(unir(parte), true); }).catch(() => []);
+    if (n === bqReq) pintarResultados(unir(items), false);
     return;
   }
   if (BQ.genero) {
@@ -364,7 +398,7 @@ function push(v) { stack.push(v); }
 window.__back = () => {
   if (!$("#pick").classList.contains("hidden")) { pickCancel(); return; }
   const v = stack.pop();
-  if (v === "sheet") $("#sheet").classList.remove("open");
+  if (v === "sheet") { if (S.hist.length) openSheet(S.hist.pop(), true); else $("#sheet").classList.remove("open"); }
   else if (v === "cfg") $("#cfg").classList.remove("open");
   else if (v === "review") $("#review").classList.remove("open");
   else if (v === "buscar") { if (BQ.genero) { BQ.genero = null; renderBuscar(); stack.push("buscar"); } else $("#buscar").classList.remove("open"); }
@@ -375,26 +409,71 @@ window.__back = () => {
 const close = id => { const i = stack.lastIndexOf(id); if (i >= 0) stack.splice(i, 1); $("#" + id).classList.remove("open"); };
 
 // ── Ficha ──────────────────────────────────────────────────────────────────
-async function openSheet(it) {
-  S.item = it; S.meta = null; S.season = null;
+// Todo lo de una ficha se pide una sola vez y queda en memoria (empieza a bajar
+// apenas se apoya el dedo en la tarjeta, antes de soltarlo)
+const FICHAS = new Map();
+function ficha(it) {
+  if (!it || !it.id || String(it.id).startsWith("recent:")) return null;
+  let f = FICHAS.get(it.id);
+  if (!f) {
+    const m = meta(it.type, it.id).catch(() => null);
+    f = { meta: m, es: String(it.id).startsWith("tt") ? tmdbEs(it.type, it.id).catch(() => null) : Promise.resolve(null),
+          sim: m.then(x => similares(it.type, it.id, (x || it).genres)).catch(() => null) };
+    FICHAS.set(it.id, f);
+  }
+  return f;
+}
+S.hist = [];
+async function openSheet(it, volviendo) {
+  const abierta = $("#sheet").classList.contains("open");
+  if (abierta && !volviendo && S.item && S.item.id !== it.id) { S.hist.push(S.item); push("sheet"); }
+  S.item = it; S.meta = null; S.es = null; S.sim = null; S.season = null;
   $("#hero").style.backgroundImage = imgs(it);
   renderInfo();
   $("#sheet").classList.add("open"); $("#sheet").scrollTop = 0;
   if (!stack.includes("sheet")) push("sheet");
-  try { const m = await meta(it.type, it.id); if (S.item === it) { S.meta = m; renderInfo(); } } catch (e) {}
+  const f = ficha(it);
+  f.meta.then(m => { if (S.item === it && m) { S.meta = m; renderInfo(); } });
+  f.es.then(e => { if (S.item === it && e) { S.es = e; renderInfo(); } });
+  f.sim.then(x => { if (S.item === it && x) { S.sim = x; renderPare(); } });
 }
-$("#sheetClose").onclick = () => close("sheet");
+$("#sheetClose").onclick = () => { S.hist = []; while (stack.lastIndexOf("sheet") >= 0) stack.splice(stack.lastIndexOf("sheet"), 1); $("#sheet").classList.remove("open"); };
+function renderReparto() {
+  const box = $("#reparto"); if (!box) return;
+  const cast = S.es?.cast || [];
+  if (!cast.length) { box.innerHTML = ""; return; }
+  box.innerHTML = '<h3 class="sh">REPARTO</h3>';
+  const sc = el("div", "cast2");
+  for (const c of cast) {
+    const a = el("div", "actor");
+    const ph = el("div", "ph", c.photo ? "" : esc(c.name.split(" ").map(w => w[0]).slice(0, 2).join("")));
+    if (c.photo) ph.style.backgroundImage = `url("${c.photo}")`;
+    a.append(ph, el("b", "", esc(c.name)), el("span", "", esc(c.character)));
+    sc.appendChild(a);
+  }
+  box.appendChild(sc);
+}
+function renderPare() {
+  const box = $("#pare"); if (!box) return;
+  const x = S.sim;
+  if (!x) { box.innerHTML = '<h3 class="sh">PARECIDAS</h3><div class="loading">BUSCANDO…</div>'; return; }
+  if (!x.items.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<h3 class="sh">${esc(x.title || "MÁS DE " + (GENRE_ES[x.genre] || x.genre || "").toUpperCase())}</h3>`;
+  const sc = el("div", "scroller"); x.items.forEach(i => sc.appendChild(card(i))); box.appendChild(sc);
+}
 function libOf(id) { const l = S.lib; if (!l) return null; return [...l.continue, ...l.list, ...l.again].find(x => x.id === id) || null; }
 function renderInfo() {
   const lib = libOf(S.item.id) || {};
   const it = Object.assign({}, S.item, S.meta || {}, { offset: lib.offset ?? S.item.offset, videoId: lib.videoId ?? S.item.videoId, progress: lib.progress ?? S.item.progress });
+  if (S.es) { if (S.es.description) it.description = S.es.description; if (S.es.nameEs) it.name = S.es.nameEs; }
   const box = $("#info");
   const meta_ = [it.year, it.rating ? "★ " + it.rating : "", it.runtime, (it.genres || []).slice(0, 3).map(g => GENRE_ES[g] || g).join(", ")]
     .filter(Boolean).join("  ·  ");
-  const people = [(it.director || []).length ? "Dirección: " + it.director.join(", ") : "", (it.cast || []).length ? "Con " + it.cast.join(", ") : ""].filter(Boolean).join("<br>");
+  const people = [(it.director || []).length ? "Dirección: " + it.director.join(", ") : "", !S.es?.cast?.length && (it.cast || []).length ? "Con " + it.cast.join(", ") : ""].filter(Boolean).join("<br>");
   box.innerHTML = `<div class="eva title">${esc((it.name || "").toUpperCase())}</div><div class="meta">${esc(meta_)}</div>
                    <div class="desc">${esc(it.description || "")}</div><div class="cast">${esc(people).replace(/&lt;br&gt;/g, "<br>")}</div>
-                   <div id="acts"></div><div id="eps"></div>`;
+                   <div id="acts"></div><div id="eps"></div><div id="reparto"></div><div id="pare"></div>`;
+  renderReparto(); renderPare();
   const acts = $("#acts");
   const resume = (it.offset || 0) > 60000 && (it.progress || 0) < 0.95;
   if (it.type === "series") {

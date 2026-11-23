@@ -28,7 +28,7 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
     static final int PLAY = 1, LOGIN = 2;
     private WebView web;
-    private final ExecutorService pool = Executors.newFixedThreadPool(8);
+    private final ExecutorService pool = Executors.newFixedThreadPool(16);
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean listo = false;
     static volatile MainActivity viva;

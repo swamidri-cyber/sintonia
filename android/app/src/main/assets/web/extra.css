@@ -117,3 +117,16 @@ textarea.field { height: 140px; border-radius: 22px; padding: 16px 20px; resize:
 .gen { transition: transform .12s; }
 .bqRes .grid { padding-top: 6px; }
 .card .yr { position: absolute; left: 8px; top: 8px; font-family: Mono; font-size: 10px; padding: 3px 6px; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; }
+
+/* ── Ficha: reparto con fotos y parecidas ── */
+.sh { font-family: Eva; font-size: 22px; margin: 26px 0 10px; color: var(--hi); font-weight: 700; transform: scaleX(.8); transform-origin: left; white-space: nowrap; }
+.cast2 { display: flex; gap: 14px; overflow-x: auto; margin: 0 -18px; padding: 0 18px 4px; scrollbar-width: none; }
+.cast2::-webkit-scrollbar { display: none; }
+.actor { flex: none; width: 82px; text-align: center; }
+.actor .ph { width: 76px; height: 76px; margin: 0 auto 8px; border-radius: 50%; background: var(--deep) center 20%/cover no-repeat;
+             box-shadow: 0 0 0 1.5px var(--line); display: grid; place-items: center; font-family: Mono; color: var(--dim); font-size: 18px; }
+.actor b { display: block; font-size: 12.5px; line-height: 1.2; color: var(--fg); }
+.actor span { display: block; font-size: 11px; line-height: 1.2; color: var(--dim); margin-top: 3px;
+              display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#pare .scroller { margin: 0 -18px; padding: 0 18px; }
+#pare .loading { padding: 10px 0; }
