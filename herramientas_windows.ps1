@@ -32,8 +32,10 @@ if (-not (Test-Path "libmpv-2.dll") -or (Get-Item "libmpv-2.dll").Length -lt 1MB
 
 # 2b. vulkan-1.dll (la necesita libmpv; las PCs sin drivers de video, como esta VM, no la tienen)
 if (-not (Test-Path "vulkan-1.dll")) {
-  Invoke-WebRequest https://sdk.lunarg.com/sdk/download/1.4.328.1/windows/VulkanRT-X64-1.4.328.1-Components.zip -OutFile "$herr\vulkanrt.zip"
-  Expand-Archive "$herr\vulkanrt.zip" -DestinationPath "$herr\vulkanrt" -Force
+  if (-not (Test-Path "$herr\vulkanrt")) {   # ya bajado de antes: no depender del enlace de LunarG
+    Invoke-WebRequest https://sdk.lunarg.com/sdk/download/1.4.328.1/windows/VulkanRT-X64-1.4.328.1-Components.zip -OutFile "$herr\vulkanrt.zip"
+    Expand-Archive "$herr\vulkanrt.zip" -DestinationPath "$herr\vulkanrt" -Force
+  }
   Get-ChildItem -Recurse "$herr\vulkanrt" -Filter vulkan-1.dll | Where-Object { $_.FullName -match "x64" } | Select-Object -First 1 | Copy-Item -Destination .
 }
 
